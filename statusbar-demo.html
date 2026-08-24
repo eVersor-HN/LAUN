@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LAUN — Statusleisten-Varianten</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --font-head:'Chakra Petch','Segoe UI',sans-serif;
+    --font-mono:'JetBrains Mono',ui-monospace,Consolas,monospace;
+    --bg:#000000; --bg2:#0d0d0d; --fg:#ffffff; --dim:#666666; --dim2:#3a3a3a; --accent:#ffffff; --border:#2a2a2a;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; background:var(--bg); color:var(--fg); font-family:var(--font-head);
+    -webkit-font-smoothing:antialiased; min-height:100vh; padding:56px 24px 100px;
+  }
+  .texture{
+    position:fixed; inset:0; pointer-events:none; z-index:0;
+    background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px),
+      radial-gradient(ellipse at 50% 0%, transparent 40%, rgba(0,0,0,.6) 100%);
+  }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:.25;} }
+  @keyframes blink{ 0%,100%{opacity:1;} 50%{opacity:0;} }
+  @keyframes scan{ 0%{ transform:translateX(-100%); } 100%{ transform:translateX(400%); } }
+
+  .page{ position:relative; z-index:1; max-width:620px; margin:0 auto; }
+  .page > h1{
+    font-size:13px; letter-spacing:.2em; text-transform:uppercase; color:var(--dim);
+    font-weight:600; margin:0 0 4px;
+  }
+  .page > h1 b{ color:var(--fg); }
+  .page > p{ font-family:var(--font-mono); font-size:10.5px; color:var(--dim); letter-spacing:.05em; margin:0 0 44px; line-height:1.6; }
+
+  .row{ margin-bottom:38px; }
+  .row .num{
+    font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; color:var(--dim);
+    text-transform:uppercase; margin-bottom:10px; display:flex; gap:8px; align-items:baseline;
+  }
+  .row .num b{ color:var(--fg); font-weight:600; }
+
+  .screen{
+    background:var(--bg2); border:1px solid var(--border); position:relative; overflow:hidden;
+    min-height:56px; display:flex; align-items:center;
+  }
+
+  /* shared atoms */
+  .dot{ width:6px; height:6px; border-radius:50%; background:var(--accent); box-shadow:0 0 8px var(--accent); animation:pulse 1.8s ease-in-out infinite; flex:none; }
+  .mono{ font-family:var(--font-mono); }
+  .divider{ width:1px; align-self:stretch; background:var(--border); flex:none; }
+
+  /* ===== 01 — MINIMAL ===== */
+  #v1{ padding:14px 18px; gap:9px; flex-wrap:wrap; row-gap:6px; font-family:var(--font-mono); font-size:11px; letter-spacing:.08em; color:var(--dim); }
+  #v1 b{ color:var(--fg); font-weight:500; }
+  .sep{ color:var(--dim2); }
+
+  /* ===== 02 — SEGMENTED ===== */
+  #v2{ padding:0; font-family:var(--font-mono); font-size:10.5px; letter-spacing:.09em; color:var(--dim); }
+  #v2 .seg{ padding:0 16px; height:56px; display:flex; align-items:center; gap:8px; }
+  #v2 b{ color:var(--fg); font-weight:500; }
+  #v2 .seg.grow{ flex:1; }
+
+  /* ===== 03 — BRACKET HUD TAG ===== */
+  #v3{ background:transparent; border:none; min-height:auto; justify-content:flex-start; padding:6px 0; }
+  #v3 .tag{ position:relative; padding:9px 20px; font-family:var(--font-mono); font-size:10.5px; letter-spacing:.12em; color:var(--fg); }
+  #v3 .tag::before, #v3 .tag::after{ content:''; position:absolute; width:10px; height:10px; border-color:var(--accent); }
+  #v3 .tag::before{ top:0; left:0; border-top:1px solid; border-left:1px solid; }
+  #v3 .tag::after{ bottom:0; right:0; border-bottom:1px solid; border-right:1px solid; }
+  #v3 .tag i{ color:var(--dim); font-style:normal; }
+  #v3 .tag-bottom{ margin-top:6px; font-size:9.5px; color:var(--dim); letter-spacing:.08em; }
+
+  /* ===== 04 — TWO-ROW READOUT ===== */
+  #v4{ flex-direction:column; align-items:stretch; padding:10px 16px; gap:6px; }
+  #v4 .top{ font-family:var(--font-mono); font-size:9px; letter-spacing:.2em; color:var(--dim); text-transform:uppercase; }
+  #v4 .top b{ color:var(--fg); }
+  #v4 .bottom{ display:flex; gap:14px; font-family:var(--font-mono); font-size:11px; letter-spacing:.06em; color:var(--fg); }
+  #v4 .bottom span{ color:var(--dim); }
+
+  /* ===== 05 — FLOATING CAPSULE ===== */
+  #v5{ background:transparent; border:none; min-height:auto; justify-content:center; padding:14px 0; }
+  #v5 .capsule{
+    display:flex; align-items:center; gap:9px; padding:8px 18px;
+    background:var(--bg2); border:1px solid var(--border);
+    font-family:var(--font-mono); font-size:10.5px; letter-spacing:.1em; color:var(--dim);
+  }
+  #v5 .capsule b{ color:var(--fg); font-weight:500; }
+
+  /* ===== 06 — SYSTEM READOUT (battery/signal) ===== */
+  #v6{ padding:0 16px; justify-content:space-between; font-family:var(--font-mono); font-size:10.5px; letter-spacing:.06em; color:var(--dim); }
+  #v6 .left{ display:flex; align-items:center; gap:9px; }
+  #v6 .right{ display:flex; align-items:center; gap:14px; }
+  #v6 b{ color:var(--fg); font-weight:500; }
+  .signal{ display:flex; align-items:flex-end; gap:2px; height:11px; }
+  .signal i{ width:3px; background:var(--dim2); display:block; }
+  .signal i:nth-child(1){ height:30%; } .signal i:nth-child(2){ height:55%; }
+  .signal i:nth-child(3){ height:75%; } .signal i:nth-child(4){ height:100%; }
+  .signal.active i{ background:var(--fg); }
+  .battery{ width:22px; height:11px; border:1px solid var(--dim); position:relative; }
+  .battery::after{ content:''; position:absolute; right:-3px; top:3px; width:2px; height:5px; background:var(--dim); }
+  .battery i{ display:block; height:100%; background:var(--fg); width:82%; }
+
+  /* ===== 07 — SCANLINE BAR ===== */
+  #v7{ padding:0; flex-direction:column; align-items:stretch; }
+  #v7 .scanbar{ height:2px; width:100%; background:var(--border); position:relative; overflow:hidden; }
+  #v7 .scanbar i{ position:absolute; top:0; left:0; height:100%; width:25%; background:linear-gradient(90deg, transparent, var(--fg), transparent); animation:scan 2.6s linear infinite; }
+  #v7 .label{ padding:11px 16px; font-family:var(--font-mono); font-size:10.5px; letter-spacing:.1em; color:var(--dim); display:flex; justify-content:space-between; }
+  #v7 .label b{ color:var(--fg); font-weight:500; }
+
+  /* ===== 08 — TERMINAL LOG ===== */
+  #v8{ padding:0 16px; font-family:var(--font-mono); font-size:11px; letter-spacing:.02em; color:var(--fg); }
+  #v8 .prompt{ color:var(--dim); margin-right:8px; }
+  #v8 .cursor{ display:inline-block; width:7px; height:12px; background:var(--fg); margin-left:6px; animation:blink 1s step-end infinite; vertical-align:-2px; }
+
+  /* ===== 09 — ICON-ONLY COMPACT ===== */
+  #v9{ background:transparent; border:none; min-height:auto; justify-content:flex-start; padding:8px 0; gap:12px; }
+  #v9 .chip{ display:flex; align-items:center; gap:7px; padding:6px 10px; background:var(--bg2); border:1px solid var(--border); }
+  #v9 .chip .mono{ font-size:9.5px; color:var(--dim); letter-spacing:.08em; }
+
+  /* ===== 10 — FULL DASHBOARD STRIP ===== */
+  #v10{ padding:0; align-items:stretch; }
+  #v10 .cell{ flex:1; padding:9px 14px; border-right:1px solid var(--border); display:flex; flex-direction:column; gap:3px; justify-content:center; }
+  #v10 .cell:last-child{ border-right:none; }
+  #v10 .cell .k{ font-family:var(--font-mono); font-size:8px; letter-spacing:.16em; color:var(--dim); text-transform:uppercase; }
+  #v10 .cell .v{ font-family:var(--font-mono); font-size:11.5px; color:var(--fg); letter-spacing:.03em; display:flex; align-items:center; gap:6px; }
+</style>
+</head>
+<body>
+<div class="texture"></div>
+
+<div class="page">
+  <h1>LAUN — <b>10 Statusleisten-Varianten</b></h1>
+  <p>Monochrom, ein Akzent (Weiß), Stil 07 — Chakra Petch / JetBrains Mono. Uhrzeit läuft live, Werte sonst als Platzhalter.</p>
+
+  <div class="row"><div class="num"><b>01</b> Minimal — eine Zeile, reiner Text, keine Boxen</div>
+    <div class="screen" id="v1">
+      <span class="dot"></span><b>SYS://LAUN</b><span class="sep">·</span>
+      <span class="mono live-clock">00:00:00</span><span class="sep">·</span>
+      <span class="mono">82%</span><span class="sep">·</span>
+      <span class="signal active"><i></i><i></i><i></i><i></i></span><span class="sep">·</span>
+      <span class="mono">24 APPS</span><span class="sep">·</span>
+      STATUS: <b class="st">ACTIVE</b>
+    </div>
+  </div>
+
+  <div class="row"><div class="num"><b>02</b> Segmentiert — durch Trennlinien geteilte Zellen</div>
+    <div class="screen" id="v2">
+      <div class="seg"><span class="dot"></span><b>LAUN</b></div><div class="divider"></div>
+      <div class="seg mono live-clock">00:00:00</div><div class="divider"></div>
+      <div class="seg"><span class="battery"><i></i></span>82%</div><div class="divider"></div>
+      <div class="seg"><span class="signal active"><i></i><i></i><i></i><i></i></span></div><div class="divider"></div>
+      <div class="seg grow">24 APPS</div><div class="divider"></div>
+      <div class="seg"><b class="st">ACTIVE</b></div>
+    </div>
+  </div>
+
+  <div class="row"><div class="num"><b>03</b> HUD-Klammer-Tag — Eckenklammern, freistehend</div>
+    <div class="screen" id="v3"><div class="tag">
+      LAUN <i>//</i> <b class="st">STANDBY</b>
+      <div class="tag-bottom mono">00:00:00 · 82% · SIG 4/4 · 24 APPS</div>
+    </div></div>
+  </div>
+
+  <div class="row"><div class="num"><b>04</b> Zweizeilig — Systemname oben, alle Werte unten</div>
+    <div class="screen" id="v4">
+      <div class="top">LAUN <b>OS</b> — HEXAGONAL SHELL</div>
+      <div class="bottom">
+        <span>TIME</span><span class="mono live-clock">00:00:00</span>
+        <span>BAT</span><span class="mono">82%</span>
+        <span>SIG</span><span class="signal active"><i></i><i></i><i></i><i></i></span>
+        <span>APPS</span><span class="mono">24</span>
+        <span>STATE</span><b class="st">ACTIVE</b>
+      </div>
+    </div>
+  </div>
+
+  <div class="row"><div class="num"><b>05</b> Kapsel — freischwebend, zentriert, alle Werte gereiht</div>
+    <div class="screen" id="v5"><div class="capsule">
+      <span class="dot"></span><b>LAUN</b><span class="sep">·</span>
+      <span class="mono live-clock">00:00:00</span><span class="sep">·</span>
+      <span class="mono">82%</span><span class="sep">·</span>
+      <span class="signal active"><i></i><i></i><i></i><i></i></span><span class="sep">·</span>
+      <span class="mono">24 APPS</span><span class="sep">·</span>
+      <span class="st">ACTIVE</span>
+    </div></div>
+  </div>
+
+  <div class="row"><div class="num"><b>06</b> Systemleiste — wie ein OS-Statusbalken, links/rechts verteilt</div>
+    <div class="screen" id="v6">
+      <div class="left"><span class="dot"></span><b>LAUN</b><span class="sep">·</span><span class="mono">24 APPS</span><span class="sep">·</span><b class="st">ACTIVE</b></div>
+      <div class="right">
+        <span class="mono live-clock">00:00:00</span>
+        <span class="signal active"><i></i><i></i><i></i><i></i></span>
+        <span class="battery"><i></i></span><span class="mono">82%</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="row"><div class="num"><b>07</b> Scanline — animierter Ladebalken über der vollen Werteleiste</div>
+    <div class="screen" id="v7">
+      <div class="scanbar"><i></i></div>
+      <div class="label">
+        <span><b>LAUN</b><span class="sep">·</span><b class="st">ACTIVE</b></span>
+        <span class="mono live-clock">00:00:00</span>
+        <span class="mono">82%</span>
+        <span class="signal active"><i></i><i></i><i></i><i></i></span>
+        <span class="mono">24 APPS</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="row"><div class="num"><b>08</b> Terminal — Kommandozeilen-Look, Key=Value, mit Cursor</div>
+    <div class="screen" id="v8">
+      <span class="prompt">&gt;</span>SYS.STATUS=<b class="st">ACTIVE</b>&nbsp; TIME=<span class="mono live-clock">00:00:00</span>&nbsp; BAT=82%&nbsp; SIG=4/4&nbsp; APPS=24<span class="cursor"></span>
+    </div>
+  </div>
+
+  <div class="row"><div class="num"><b>09</b> Icon-Chips — kompakte Einzelwerte, ohne Fließtext</div>
+    <div class="screen" id="v9">
+      <div class="chip"><span class="dot"></span><span class="mono st">ACTIVE</span></div>
+      <div class="chip"><span class="mono">24 APPS</span></div>
+      <div class="chip"><span class="signal active"><i></i><i></i><i></i><i></i></span></div>
+      <div class="chip"><span class="battery"><i></i></span><span class="mono">82%</span></div>
+      <div class="chip"><span class="mono live-clock">00:00:00</span></div>
+    </div>
+  </div>
+
+  <div class="row"><div class="num"><b>10</b> Dashboard-Strip — volle Zellen-Aufteilung, dichteste Variante</div>
+    <div class="screen" id="v10">
+      <div class="cell"><div class="k">Status</div><div class="v"><span class="dot"></span><b class="st">ACTIVE</b></div></div>
+      <div class="cell"><div class="k">Zeit</div><div class="v mono live-clock">00:00:00</div></div>
+      <div class="cell"><div class="k">Apps</div><div class="v">24</div></div>
+      <div class="cell"><div class="k">Signal</div><div class="v"><span class="signal active"><i></i><i></i><i></i><i></i></span></div></div>
+      <div class="cell"><div class="k">Akku</div><div class="v"><span class="battery"><i></i></span>82%</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  function tick(){
+    var d = new Date();
+    var t = String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0');
+    document.querySelectorAll('.live-clock').forEach(function(el){ el.textContent = t; });
+  }
+  tick();
+  setInterval(tick, 1000);
+
+  // flip ACTIVE/STANDBY every few seconds across all variants, in sync, for a quick visual read of both states
+  var toggle = false;
+  function flip(){
+    toggle = !toggle;
+    document.querySelectorAll('.st').forEach(function(el){ el.textContent = toggle ? 'STANDBY' : 'ACTIVE'; });
+  }
+  setInterval(flip, 3000);
+})();
+</script>
+</body>
+</html>
