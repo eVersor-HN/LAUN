@@ -35,6 +35,7 @@
   }
   .hud .dot{ display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--accent); margin-right:8px; box-shadow:0 0 8px var(--accent); animation:pulse 1.8s ease-in-out infinite; }
   .hud b{ color:var(--fg); font-weight:500; }
+  .hud.hidden{ display:none; }
   @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:.25;} }
 
   .tag{
@@ -53,6 +54,9 @@
   .set-row label{ display:flex; justify-content:space-between; letter-spacing:.09em; text-transform:uppercase; margin-bottom:5px; }
   .set-row label span{ color:var(--fg); }
   .set-row input[type=range]{ width:100%; accent-color:var(--fg); }
+  .toggle-row{ display:flex; align-items:center; justify-content:space-between; }
+  .toggle-row label{ margin:0; }
+  .toggle-row input[type=checkbox]{ width:15px; height:15px; accent-color:var(--fg); cursor:pointer; }
 
   .actions{
     position:fixed; bottom:20px; right:20px; z-index:20; display:flex; gap:8px;
@@ -146,7 +150,7 @@
 
 <div class="texture"></div>
 
-<div class="hud"><span class="dot"></span>SYS://LAUNCHER&nbsp; STATUS: <b id="hud-status">STANDBY</b></div>
+<div class="hud" id="hud"><span class="dot"></span>SYS://LAUNCHER&nbsp; STATUS: <b id="hud-status">STANDBY</b></div>
 <div class="tag">STYLE <b>07 — INK/WHITE</b><br>ANIM <b>16 — SHATTER CONVERGE</b></div>
 
 <div class="stage" id="stage">
@@ -162,6 +166,14 @@
   <div class="set-row">
     <label>Anzahl <span id="count-val">30</span></label>
     <input type="range" id="count-range" min="1" max="91" value="30" step="1">
+  </div>
+  <div class="set-row toggle-row">
+    <label>HUD-Statusleiste</label>
+    <input type="checkbox" id="hud-toggle" checked>
+  </div>
+  <div class="set-row toggle-row">
+    <label>Vollbildmodus</label>
+    <input type="checkbox" id="fullscreen-toggle">
   </div>
 </div>
 
@@ -193,6 +205,13 @@
   var countRange = document.getElementById('count-range');
   var countVal = document.getElementById('count-val');
 
+  // optional URL params for embedding this demo at a fixed device size: ?size=64&count=19&auto=1
+  var qs = new URLSearchParams(location.search);
+  if(qs.has('size')) sizeRange.value = Math.min(Math.max(Number(qs.get('size')), Number(sizeRange.min)), Number(sizeRange.max));
+  if(qs.has('count')) countRange.value = Math.min(Math.max(Number(qs.get('count')), Number(countRange.min)), Number(countRange.max));
+  document.getElementById('size-val').textContent = sizeRange.value;
+  document.getElementById('count-val').textContent = countRange.value;
+
   var isOpen = false;
   var hexEls = [];
   var colorMap = {};
@@ -215,6 +234,7 @@
   var activeFace = null, activeIdx = null;
   var longPressTimer = null, longPressFired = false;
   var lastPX = 0, lastPY = 0;
+  var suppressNextClick = false;
 
   function clearLongPressTimer(){ if(longPressTimer){ clearTimeout(longPressTimer); longPressTimer = null; } }
 
@@ -252,7 +272,10 @@
 
   function endPress(){
     clearLongPressTimer();
-    if(pressActive && !longPressFired) launchActive();
+    if(pressActive){
+      if(longPressFired) suppressNextClick = true;
+      else launchActive();
+    }
     pressActive = false;
     if(activeFace) activeFace.classList.remove('drag-hover');
     activeFace = null; activeIdx = null;
@@ -265,7 +288,7 @@
     updateActiveFromPoint(e.clientX, e.clientY);
   });
   document.addEventListener('pointermove', function(e){
-    if(!pressActive) return;
+    if(!pressActive || longPressFired) return;
     updateActiveFromPoint(e.clientX, e.clientY);
   });
   document.addEventListener('pointerup', function(){
@@ -286,7 +309,6 @@
   popover.innerHTML = '<div class="cp-label">Kachelfarbe wählen</div><div class="cp-grid" id="cp-grid"></div><button class="cp-reset" id="cp-reset">Zurücksetzen</button>';
   document.body.appendChild(popover);
   var cpGrid = popover.querySelector('#cp-grid');
-  var popoverJustOpened = false;
 
   COLORS.forEach(function(c){
     var sw = document.createElement('div');
@@ -310,7 +332,8 @@
   });
 
   document.addEventListener('click', function(e){
-    if(!popover.classList.contains('show') || popoverJustOpened) return;
+    if(suppressNextClick){ suppressNextClick = false; return; }
+    if(!popover.classList.contains('show')) return;
     if(!e.target.closest('.color-popover')) popover.classList.remove('show');
   });
 
@@ -328,8 +351,6 @@
     popover.style.left = clientX + 'px';
     popover.style.top = clientY + 'px';
     popover.classList.add('show');
-    popoverJustOpened = true;
-    setTimeout(function(){ popoverJustOpened = false; }, 60);
     requestAnimationFrame(function(){
       var r = popover.getBoundingClientRect();
       var nx = clientX, ny = clientY;
@@ -387,25 +408,35 @@
     while(hexEls.length > n){ hexfield.removeChild(hexEls.pop()); }
   }
 
-  // pointy-top axial hex grid, spiraling out from the center
-  function layoutHexes(){
-    var w = hexfield.clientWidth, h = hexfield.clientHeight;
-    var coords = hexSpiral(hexEls.length);
-    var hexW = hexSize;
+  // pointy-top axial hex grid, spiraling out from the center; auto-shrinks to stay within the screen
+  var LAYOUT_MARGIN = 16;
+  function computeHexGeometry(coords, hexW){
     var s = hexW / Math.sqrt(3);
     var hexH = s * 2;
-
     var pts = coords.map(function(c){
       return { x: s*Math.sqrt(3)*(c.q + c.r/2), y: s*1.5*c.r, ring: c.ring };
     });
-
     var minX=0,maxX=0,minY=0,maxY=0;
     pts.forEach(function(p){
       minX = Math.min(minX, p.x - hexW/2); maxX = Math.max(maxX, p.x + hexW/2);
       minY = Math.min(minY, p.y - hexH/2); maxY = Math.max(maxY, p.y + hexH/2);
     });
-    var offsetX = w/2 - (minX+maxX)/2;
-    var offsetY = h/2 - (minY+maxY)/2;
+    return { hexW:hexW, hexH:hexH, pts:pts, totalW: maxX-minX, totalH: maxY-minY, minX:minX, maxX:maxX, minY:minY, maxY:maxY };
+  }
+
+  function layoutHexes(){
+    var w = hexfield.clientWidth, h = hexfield.clientHeight;
+    var coords = hexSpiral(hexEls.length);
+    var availW = Math.max(40, w - LAYOUT_MARGIN*2);
+    var availH = Math.max(40, h - LAYOUT_MARGIN*2);
+
+    var geo = computeHexGeometry(coords, hexSize);
+    var scale = Math.min(1, availW / geo.totalW, availH / geo.totalH);
+    if(scale < 1) geo = computeHexGeometry(coords, hexSize * scale);
+
+    var hexW = geo.hexW, hexH = geo.hexH, pts = geo.pts;
+    var offsetX = w/2 - (geo.minX+geo.maxX)/2;
+    var offsetY = h/2 - (geo.minY+geo.maxY)/2;
 
     var maxRing = pts.reduce(function(m,p){ return Math.max(m,p.ring); }, 0);
 
@@ -477,8 +508,36 @@
   countRange.addEventListener('input', function(e){ e.stopPropagation(); hexCount = Number(countRange.value); countVal.textContent = hexCount; ensureCount(hexCount); layoutHexes(); });
   countRange.addEventListener('click', function(e){ e.stopPropagation(); });
 
+  // ---- HUD status bar on/off ----
+  var hud = document.getElementById('hud');
+  var hudToggle = document.getElementById('hud-toggle');
+  hudToggle.addEventListener('change', function(e){
+    e.stopPropagation();
+    hud.classList.toggle('hidden', !hudToggle.checked);
+  });
+  hudToggle.addEventListener('click', function(e){ e.stopPropagation(); });
+
+  // ---- fullscreen on/off (browser Fullscreen API stand-in for the native always-fullscreen mode) ----
+  var fullscreenToggle = document.getElementById('fullscreen-toggle');
+  fullscreenToggle.addEventListener('change', function(e){
+    e.stopPropagation();
+    if(fullscreenToggle.checked){
+      if(document.documentElement.requestFullscreen){
+        document.documentElement.requestFullscreen().catch(function(){ fullscreenToggle.checked = false; });
+      }
+    } else if(document.fullscreenElement){
+      document.exitFullscreen();
+    }
+  });
+  fullscreenToggle.addEventListener('click', function(e){ e.stopPropagation(); });
+  document.addEventListener('fullscreenchange', function(){
+    fullscreenToggle.checked = !!document.fullscreenElement;
+  });
+
   ensureCount(hexCount);
   layoutHexes();
+
+  if(qs.get('auto') === '1'){ setTimeout(open, 300); }
 })();
 </script>
 </body>
