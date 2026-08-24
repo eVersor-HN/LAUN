@@ -3,7 +3,6 @@ package com.eversorhn.laun.ui
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Text
 import com.eversorhn.laun.ui.theme.LaunColors
 import com.eversorhn.laun.ui.theme.HeadFontFamily
+import com.eversorhn.laun.ui.theme.MonoFontFamily
 import kotlinx.coroutines.delay
 
 /** Pointy-top hexagon, matching demo.html's clip-path: polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%). */
@@ -51,7 +51,7 @@ internal fun HexTile(
     colorHex: String?,
     modifier: Modifier = Modifier
 ) {
-    val progress = remember(tile.app.packageName) { Animatable(0f) }
+    val progress = remember(tile.index) { Animatable(0f) }
     LaunchedEffect(isOpen, tile.delayMs) {
         if (isOpen) {
             delay(tile.delayMs.toLong())
@@ -86,7 +86,7 @@ internal fun HexTile(
 
     Box(
         modifier = modifier
-            .size(tile.sizeDp)
+            .size(width = tile.widthDp, height = tile.heightDp)
             .graphicsLayer {
                 alpha = progress.value
                 scaleX = 0.9f
@@ -112,21 +112,36 @@ internal fun HexTile(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Image(
-                    bitmap = tile.app.icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(26.dp)
-                )
                 Text(
-                    text = tile.app.label,
-                    color = LaunColors.fg,
-                    fontFamily = HeadFontFamily,
-                    fontSize = 10.5.sp,
-                    textAlign = TextAlign.Center,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 3.dp)
+                    text = "APP_" + (tile.index + 1).toString().padStart(2, '0'),
+                    color = LaunColors.dim,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 8.5.sp,
+                    letterSpacing = 0.8.sp,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip
                 )
+                if (tile.app != null) {
+                    Text(
+                        text = tile.app.label,
+                        color = LaunColors.fg,
+                        fontFamily = HeadFontFamily,
+                        fontSize = 10.5.sp,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 3.dp)
+                    )
+                } else {
+                    Text(
+                        text = "+",
+                        color = LaunColors.dim,
+                        fontFamily = HeadFontFamily,
+                        fontSize = 15.sp,
+                        modifier = Modifier.padding(top = 3.dp)
+                    )
+                }
             }
         }
     }

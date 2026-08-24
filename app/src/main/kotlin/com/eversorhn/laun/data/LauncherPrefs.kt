@@ -19,15 +19,18 @@ data class LauncherSettings(
     val hexCountIndex: Int = 3,
     val hudVisible: Boolean = true,
     val immersiveEnabled: Boolean = true,
-    val tileColors: Map<String, String> = emptyMap()
+    val tileColors: Map<String, String> = emptyMap(),
+    val slotApps: Map<Int, String> = emptyMap()
 ) {
     val hexCount: Int get() = RING_COUNTS[hexCountIndex.coerceIn(RING_COUNTS.indices)]
 }
 
 /**
  * Persists everything that was reset on every page reload in the demo.html prototype:
- * tile size/count, HUD/immersive toggles, and per-app tile colors (keyed by package name,
- * not index — an index isn't a stable identity once the app list is the real installed set).
+ * tile size/count, HUD/immersive toggles, per-app tile colors (keyed by package name, not
+ * index — an index isn't a stable identity once the app list is the real installed set), and
+ * which app (if any) is assigned to each grid slot (keyed by slot index — slots are fixed
+ * positions in the honeycomb, independent of which app currently occupies them).
  */
 class LauncherPrefs(private val context: Context) {
 
@@ -37,6 +40,7 @@ class LauncherPrefs(private val context: Context) {
         val HUD_VISIBLE = booleanPreferencesKey("hud_visible")
         val IMMERSIVE_ENABLED = booleanPreferencesKey("immersive_enabled")
         val TILE_COLORS = stringSetPreferencesKey("tile_colors")
+        val SLOT_APPS = stringSetPreferencesKey("slot_apps")
     }
 
     val settings: Flow<LauncherSettings> = context.dataStore.data.map { prefs ->
@@ -49,6 +53,12 @@ class LauncherPrefs(private val context: Context) {
                 .mapNotNull { entry ->
                     val i = entry.indexOf('|')
                     if (i < 0) null else entry.substring(0, i) to entry.substring(i + 1)
+                }
+                .toMap(),
+            slotApps = (prefs[Keys.SLOT_APPS] ?: emptySet())
+                .mapNotNull { entry ->
+                    val i = entry.indexOf('|')
+                    if (i < 0) null else entry.substring(0, i).toIntOrNull()?.let { it to entry.substring(i + 1) }
                 }
                 .toMap()
         )
@@ -77,6 +87,17 @@ class LauncherPrefs(private val context: Context) {
                 .toMutableSet()
             if (colorHex != null) current += "$packageName|$colorHex"
             prefs[Keys.TILE_COLORS] = current
+        }
+    }
+
+    /** Assigns (or, with packageName = null, clears) the app occupying a grid slot. */
+    suspend fun setSlotApp(slotIndex: Int, packageName: String?) {
+        context.dataStore.edit { prefs ->
+            val current = (prefs[Keys.SLOT_APPS] ?: emptySet())
+                .filterNot { it.startsWith("$slotIndex|") }
+                .toMutableSet()
+            if (packageName != null) current += "$slotIndex|$packageName"
+            prefs[Keys.SLOT_APPS] = current
         }
     }
 }

@@ -37,6 +37,7 @@ fun ColorPickerSheet(
     anchor: Offset,
     onPick: (String) -> Unit,
     onReset: () -> Unit,
+    onClearTile: () -> Unit,
     onDismiss: () -> Unit
 ) {
     Popup(
@@ -83,7 +84,7 @@ fun ColorPickerSheet(
                 }
             }
             Text(
-                text = "ZURÜCKSETZEN",
+                text = "FARBE ZURÜCKSETZEN",
                 color = LaunColors.dim,
                 fontFamily = MonoFontFamily,
                 fontSize = 9.5.sp,
@@ -94,6 +95,21 @@ fun ColorPickerSheet(
                     .padding(top = 8.dp)
                     .border(1.dp, LaunColors.border)
                     .clickable { onReset() }
+                    .padding(vertical = 6.dp),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+            Text(
+                text = "KACHEL LEEREN",
+                color = LaunColors.dim,
+                fontFamily = MonoFontFamily,
+                fontSize = 9.5.sp,
+                letterSpacing = 1.sp,
+                fontWeight = FontWeight.Normal,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp)
+                    .border(1.dp, LaunColors.border)
+                    .clickable { onClearTile() }
                     .padding(vertical = 6.dp),
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )

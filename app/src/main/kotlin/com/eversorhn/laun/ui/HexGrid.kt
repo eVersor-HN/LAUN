@@ -14,153 +14,185 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.boundsInParent
-import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.eversorhn.laun.data.AppInfo
 import kotlinx.coroutines.delay
-import kotlin.math.hypot
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
 import kotlin.random.Random
 
-/** Pointy-top axial hex coordinate, tagged with the ring it belongs to. */
-private data class HexCell(val q: Int, val r: Int, val ring: Int)
+private data class RectCapacity(val cols: Int, val rows: Int, val hexH: Float)
 
-private val HEX_DIRS = listOf(1 to 0, 1 to -1, 0 to -1, -1 to 0, -1 to 1, 0 to 1)
-
-private fun hexRing(radius: Int): List<HexCell> {
-    if (radius == 0) return listOf(HexCell(0, 0, 0))
-    val result = mutableListOf<HexCell>()
-    var q = HEX_DIRS[4].first * radius
-    var r = HEX_DIRS[4].second * radius
-    for (side in 0 until 6) {
-        repeat(radius) {
-            result += HexCell(q, r, radius)
-            q += HEX_DIRS[side].first
-            r += HEX_DIRS[side].second
-        }
-    }
-    return result
-}
-
-/** A full symmetric hex-of-hexes for n in RING_COUNTS (1, 7, 19, 37, 61, 91): every ring is complete. */
-private fun hexSpiral(n: Int): List<HexCell> {
-    val list = mutableListOf(HexCell(0, 0, 0))
-    var ring = 1
-    while (list.size < n) {
-        list += hexRing(ring)
-        ring++
-    }
-    return list.take(n)
+/** How many pointy-top hex columns/rows of width [hexW] fit an [availW]x[availH] rectangle. */
+private fun hexCapacity(hexW: Float, availW: Float, availH: Float): RectCapacity {
+    val s = hexW / sqrt(3f)
+    val hexH = s * 2f
+    val cols = max(1, (availW / hexW).toInt())
+    val rows = max(1, ((availH - hexH * 0.25f) / (hexH * 0.75f)).toInt() + 1)
+    return RectCapacity(cols, rows, hexH)
 }
 
 internal data class TileLayout(
-    val app: AppInfo,
+    val app: AppInfo?,
+    val index: Int,
     val centerXDp: Float,
     val centerYDp: Float,
-    val sizeDp: Dp,
+    val widthDp: Dp,
+    val heightDp: Dp,
     val fxDp: Float,
     val fyDp: Float,
     val frDeg: Float,
     val delayMs: Int
 )
 
+private data class LayoutResult(val tiles: List<TileLayout>, val shrunk: Boolean)
+
 private const val LAYOUT_MARGIN_DP = 16f
+private const val TILE_RENDER_SCALE = 0.9f
+
+/**
+ * True point-in-hexagon test against the tile's actual rendered (scaled) shape — not its
+ * rectangular bounding box. Without this, the "background" gaps between hexes (and the pointed
+ * corners of each tile's bounding box) would wrongly register as hits on the nearest tile,
+ * matching a browser's clip-path-aware elementFromPoint(), which the demo relies on.
+ */
+private fun hexContains(point: Offset, tile: TileLayout, density: Density): Boolean {
+    val wPx = with(density) { tile.widthDp.toPx() }
+    val hPx = with(density) { tile.heightDp.toPx() }
+    val cxPx = with(density) { tile.centerXDp.dp.toPx() }
+    val cyPx = with(density) { tile.centerYDp.dp.toPx() }
+    val dx = abs(point.x - cxPx) / TILE_RENDER_SCALE
+    val dy = abs(point.y - cyPx) / TILE_RENDER_SCALE
+    val halfW = wPx / 2f
+    if (dx > halfW) return false
+    val allowedHalfH = hPx / 2f - (dx / halfW) * (hPx / 4f)
+    return dy <= allowedHalfH
+}
 
 /**
  * Symmetric honeycomb (always a complete hex-of-hexes, per RING_COUNTS), auto-shrinking the tile
  * size to fit the available space — a direct port of demo.html's layoutHexes()/hexSpiral(), plus
  * the press-drag-highlight and release-to-launch interaction from the same file.
+ *
+ * [slots] is always exactly [hexCount]-sized, index-stable: null means the slot is unassigned.
  */
 @Composable
 fun HexGrid(
-    apps: List<AppInfo>,
+    slots: List<AppInfo?>,
     hexSizeDp: Int,
     tileColors: Map<String, String>,
     isOpen: Boolean,
     onOpen: () -> Unit,
     onCloseBackground: () -> Unit,
-    onLongPressApp: (AppInfo, Offset) -> Unit,
+    onLongPressApp: (AppInfo, Int, Offset) -> Unit,
+    onLongPressBackground: () -> Unit,
+    onTapEmptySlot: (Int) -> Unit,
     onLaunch: (AppInfo) -> Unit,
+    onShrinkToFitChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    if (apps.isEmpty()) return
+    if (slots.isEmpty()) return
 
     BoxWithConstraints(modifier = modifier) {
         val availWDp = max(40f, maxWidth.value - LAYOUT_MARGIN_DP * 2)
         val availHDp = max(40f, maxHeight.value - LAYOUT_MARGIN_DP * 2)
         val boxWDp = maxWidth.value
         val boxHDp = maxHeight.value
-        val n = apps.size
+        val n = slots.size
 
-        val tiles = remember(apps, hexSizeDp, availWDp, availHDp) {
-            val coords = hexSpiral(n)
-
-            // capacity-fit-then-shrink: bounding box at the requested size, scaled down to fit
+        val layoutResult = remember(slots, hexSizeDp, availWDp, availHDp) {
+            // Fill the actual screen rectangle (both width and height), not just a fixed
+            // symmetric hex-of-hexes outline: find how many cols/rows fit at the requested tile
+            // size, only shrinking the size if even a 1x1 grid wouldn't fit n tiles.
             var hexW = hexSizeDp.toFloat()
-            val s0 = hexW / sqrt(3f)
-            val hexH0 = s0 * 2f
-            val pts0 = coords.map { c -> Offset(s0 * sqrt(3f) * (c.q + c.r / 2f), s0 * 1.5f * c.r) }
+            var cap = hexCapacity(hexW, availWDp, availHDp)
+            while (cap.cols * cap.rows < n && hexW > 20f) {
+                hexW -= 1f
+                cap = hexCapacity(hexW, availWDp, availHDp)
+            }
+            val cols = cap.cols
+            val rows = cap.rows
+            val hexH = cap.hexH
+
+            // every honeycomb cell that fits the rectangle, offset-staggered rows
+            val cells = ArrayList<Offset>(cols * rows)
+            for (row in 0 until rows) {
+                for (col in 0 until cols) {
+                    cells += Offset(col * hexW + (if (row % 2 == 1) hexW / 2 else 0f), row * hexH * 0.75f)
+                }
+            }
+            val cx = cells.sumOf { it.x.toDouble() }.toFloat() / cells.size
+            val cy = cells.sumOf { it.y.toDouble() }.toFloat() / cells.size
+            // closest-to-center cells first — this is what keeps the shape stable and centered
+            // as n grows/shrinks, and what the outside-in reveal delay is based on below
+            val ranked = cells
+                .map { c -> Triple(c, c.x - cx, c.y - cy) }
+                .sortedBy { (_, dx, dy) -> dx * dx + dy * dy }
+                .take(n)
+
             var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
             var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
-            pts0.forEach { p ->
-                minX = min(minX, p.x - hexW / 2); maxX = max(maxX, p.x + hexW / 2)
-                minY = min(minY, p.y - hexH0 / 2); maxY = max(maxY, p.y + hexH0 / 2)
+            ranked.forEach { (_, dx, dy) ->
+                minX = min(minX, dx - hexW / 2); maxX = max(maxX, dx + hexW / 2)
+                minY = min(minY, dy - hexH / 2); maxY = max(maxY, dy + hexH / 2)
             }
-            val scale = min(1f, min(availWDp / (maxX - minX), availHDp / (maxY - minY)))
-            if (scale < 1f) hexW *= scale
+            val offsetX = boxWDp / 2 - (minX + maxX) / 2
+            val offsetY = boxHDp / 2 - (minY + maxY) / 2
+            val maxDist = ranked.maxOf { (_, dx, dy) -> sqrt(dx * dx + dy * dy) }.let { if (it == 0f) 1f else it }
 
-            val s = hexW / sqrt(3f)
-            val hexH = s * 2f
-            val pts = coords.map { c -> Offset(s * sqrt(3f) * (c.q + c.r / 2f), s * 1.5f * c.r) }
-            var bMinX = Float.MAX_VALUE; var bMaxX = -Float.MAX_VALUE
-            var bMinY = Float.MAX_VALUE; var bMaxY = -Float.MAX_VALUE
-            pts.forEach { p ->
-                bMinX = min(bMinX, p.x - hexW / 2); bMaxX = max(bMaxX, p.x + hexW / 2)
-                bMinY = min(bMinY, p.y - hexH / 2); bMaxY = max(bMaxY, p.y + hexH / 2)
-            }
-            val offsetX = boxWDp / 2 - (bMinX + bMaxX) / 2
-            val offsetY = boxHDp / 2 - (bMinY + bMaxY) / 2
-            val maxDist = coords.maxOf { hypot(it.q.toFloat(), it.r.toFloat()) }.let { if (it == 0f) 1f else it }
-
-            apps.mapIndexed { i, app ->
-                val c = coords[i]
-                val p = pts[i]
-                val dist = hypot(c.q.toFloat(), c.r.toFloat())
+            val tileList = slots.mapIndexed { i, app ->
+                val (_, dx, dy) = ranked[i]
+                val dist = sqrt(dx * dx + dy * dy)
                 TileLayout(
                     app = app,
-                    centerXDp = offsetX + p.x,
-                    centerYDp = offsetY + p.y,
-                    sizeDp = hexW.dp,
-                    fxDp = p.x * 0.5f,
-                    fyDp = p.y * 0.5f,
+                    index = i,
+                    centerXDp = offsetX + dx,
+                    centerYDp = offsetY + dy,
+                    widthDp = hexW.dp,
+                    heightDp = hexH.dp,
+                    fxDp = dx * 0.5f,
+                    fyDp = dy * 0.5f,
                     frDeg = Random.nextFloat() * 40f - 20f,
                     delayMs = ((maxDist - dist) / maxDist * 420f).toInt()
                 )
             }
+            LayoutResult(tileList, shrunk = hexW < hexSizeDp.toFloat() - 0.5f)
         }
+        val tiles = layoutResult.tiles
+        LaunchedEffect(layoutResult.shrunk) { onShrinkToFitChange(layoutResult.shrunk) }
 
-        var tileRects by remember { mutableStateOf<Map<String, Rect>>(emptyMap()) }
-        var activePackage by remember { mutableStateOf<String?>(null) }
+        val density = LocalDensity.current
+        fun hitTile(point: Offset): Int? =
+            tiles.lastOrNull { hexContains(point, it, density) }?.index
+
+        var activeSlot by remember { mutableStateOf<Int?>(null) }
         var pressActive by remember { mutableStateOf(false) }
         var longPressTriggered by remember { mutableStateOf(false) }
         var lastPointerPos by remember { mutableStateOf(Offset.Zero) }
 
-        // Long-press: (re)starts whenever the highlighted tile changes, matching the demo's
-        // setActiveFace() — moving to a different tile resets the timer, holding still fires it.
-        LaunchedEffect(activePackage, pressActive) {
-            val pkg = activePackage
-            if (pkg != null && pressActive) {
+        // Long-press: (re)starts whenever the highlighted target changes, matching the demo's
+        // setActiveFace() — moving to a different tile (or on/off the background) resets the
+        // timer, holding still fires it. On an occupied tile: opens the color/clear picker. On
+        // empty background (no tile under the pointer): opens settings — there's no button for
+        // it. Long-pressing an empty slot does nothing (its tap action is already "add app").
+        LaunchedEffect(activeSlot, pressActive) {
+            if (pressActive) {
                 delay(500)
                 longPressTriggered = true
-                val app = tiles.firstOrNull { it.app.packageName == pkg }?.app
-                if (app != null) onLongPressApp(app, lastPointerPos)
+                val slot = activeSlot
+                if (slot != null) {
+                    val app = tiles.firstOrNull { it.index == slot }?.app
+                    if (app != null) onLongPressApp(app, slot, lastPointerPos)
+                } else {
+                    onLongPressBackground()
+                }
             }
         }
 
@@ -186,25 +218,30 @@ fun HexGrid(
                         pressActive = true
                         longPressTriggered = false
                         lastPointerPos = down.position
-                        activePackage = tileRects.entries.firstOrNull { it.value.contains(down.position) }?.key
+                        activeSlot = hitTile(down.position)
 
                         while (true) {
                             val event = awaitPointerEvent()
                             val change = event.changes.firstOrNull() ?: break
                             lastPointerPos = change.position
                             if (!longPressTriggered) {
-                                val hit = tileRects.entries.firstOrNull { it.value.contains(change.position) }?.key
-                                if (hit != activePackage) activePackage = hit
+                                val hit = hitTile(change.position)
+                                if (hit != activeSlot) activeSlot = hit
                             }
                             if (change.changedToUp()) break
                         }
 
                         if (!longPressTriggered) {
-                            val app = tiles.firstOrNull { it.app.packageName == activePackage }?.app
-                            if (app != null) onLaunch(app) else onCloseBackground()
+                            val slot = activeSlot
+                            val app = tiles.firstOrNull { it.index == slot }?.app
+                            when {
+                                app != null -> onLaunch(app)
+                                slot != null -> onTapEmptySlot(slot)
+                                else -> onCloseBackground()
+                            }
                         }
                         pressActive = false
-                        activePackage = null
+                        activeSlot = null
                     }
                 }
         ) {
@@ -212,13 +249,10 @@ fun HexGrid(
                 HexTile(
                     tile = tile,
                     isOpen = isOpen,
-                    isActive = tile.app.packageName == activePackage,
-                    colorHex = tileColors[tile.app.packageName],
+                    isActive = tile.index == activeSlot,
+                    colorHex = tile.app?.let { tileColors[it.packageName] },
                     modifier = Modifier
-                        .offset(tile.centerXDp.dp - tile.sizeDp / 2, tile.centerYDp.dp - tile.sizeDp / 2)
-                        .onGloballyPositioned { coords ->
-                            tileRects = tileRects + (tile.app.packageName to coords.boundsInParent())
-                        }
+                        .offset(tile.centerXDp.dp - tile.widthDp / 2, tile.centerYDp.dp - tile.heightDp / 2)
                 )
             }
         }

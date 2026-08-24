@@ -5,8 +5,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.os.Build
-import androidx.core.graphics.drawable.toBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -29,12 +27,9 @@ class InstalledAppsRepository(private val context: Context) {
         resolveInfos
             .distinctBy { it.activityInfo.packageName }
             .map { info ->
-                val label = info.loadLabel(pm).toString()
-                val icon = info.loadIcon(pm).toBitmap().asImageBitmap()
                 AppInfo(
                     packageName = info.activityInfo.packageName,
-                    label = label,
-                    icon = icon
+                    label = info.loadLabel(pm).toString()
                 )
             }
             .sortedBy { it.label.lowercase() }

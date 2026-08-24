@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -81,22 +83,38 @@ fun StatusBar(
         }
     }
 
+    // A true-centered clock (not just "centered in leftover space") needs the trailing group's
+    // width reserved on the left too — an invisible mirror copy does that without a custom layout.
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        StatusEndGroup(isOpen, battery, connected, appCount, cursorOn, modifier = Modifier.alpha(0f))
+        MonoText(clock, LaunColors.fg)
+        StatusEndGroup(isOpen, battery, connected, appCount, cursorOn)
+    }
+}
+
+@Composable
+private fun StatusEndGroup(
+    isOpen: Boolean,
+    battery: Int,
+    connected: Boolean,
+    appCount: Int,
+    cursorOn: Boolean,
+    modifier: Modifier = Modifier
+) {
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(9.dp)
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         MonoText(">", LaunColors.dim)
         MonoText(if (isOpen) "ACTIVE" else "STANDBY", LaunColors.fg)
-        MonoText("·", LaunColors.dim2)
-        MonoText(clock, LaunColors.fg)
-        MonoText("·", LaunColors.dim2)
         BatteryGlyph(percent = battery)
-        MonoText("·", LaunColors.dim2)
         SignalGlyph(active = connected)
-        MonoText("·", LaunColors.dim2)
         MonoText("$appCount", LaunColors.fg)
-        MonoText("APPS", LaunColors.dim)
         Box(
             modifier = Modifier
                 .width(7.dp)
@@ -107,8 +125,8 @@ fun StatusBar(
 }
 
 @Composable
-private fun MonoText(text: String, color: Color) {
-    Text(text = text, color = color, fontFamily = MonoFontFamily, fontSize = 11.sp)
+private fun MonoText(text: String, color: Color, modifier: Modifier = Modifier) {
+    Text(text = text, color = color, fontFamily = MonoFontFamily, fontSize = 11.sp, modifier = modifier)
 }
 
 @Composable

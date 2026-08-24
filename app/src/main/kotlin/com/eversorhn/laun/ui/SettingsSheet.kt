@@ -38,6 +38,7 @@ fun SettingsSheet(
     onHexSizeChange: (Int) -> Unit,
     hexCountIndex: Int,
     onHexCountIndexChange: (Int) -> Unit,
+    didShrinkToFit: Boolean,
     hudVisible: Boolean,
     onHudVisibleChange: (Boolean) -> Unit,
     immersiveEnabled: Boolean,
@@ -75,6 +76,17 @@ fun SettingsSheet(
                         activeTrackColor = LaunColors.fg,
                         inactiveTrackColor = LaunColors.border
                     )
+                )
+            }
+
+            if (didShrinkToFit) {
+                Text(
+                    text = "PASST NICHT AUF DEN SCREEN — GRÖSSE AUTOMATISCH VERKLEINERT",
+                    color = LaunColors.dim,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 9.sp,
+                    letterSpacing = 0.6.sp,
+                    modifier = Modifier.padding(bottom = 10.dp)
                 )
             }
 
