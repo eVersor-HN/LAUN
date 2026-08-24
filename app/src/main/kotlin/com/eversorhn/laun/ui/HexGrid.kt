@@ -121,10 +121,14 @@ fun HexGrid(
             val rows = cap.rows
             val hexH = cap.hexH
 
-            // every honeycomb cell that fits the rectangle, offset-staggered rows
+            // Every honeycomb cell that fits the rectangle, offset-staggered rows. Odd rows get
+            // one fewer tile than even rows (5,4,5,4,...) rather than the same count shifted —
+            // that's what keeps each row centered under the next or previous instead of the
+            // whole row just sliding right, so the overall shape stays symmetric at any size/count.
             val cells = ArrayList<Offset>(cols * rows)
             for (row in 0 until rows) {
-                for (col in 0 until cols) {
+                val rowCols = if (row % 2 == 0) cols else max(0, cols - 1)
+                for (col in 0 until rowCols) {
                     cells += Offset(col * hexW + (if (row % 2 == 1) hexW / 2 else 0f), row * hexH * 0.75f)
                 }
             }
