@@ -83,7 +83,8 @@
     clip-path:polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
     background:var(--border);
     transform:scale(.9); transform-origin:center; cursor:pointer;
-    opacity:0; user-select:none; -webkit-touch-callout:none;
+    opacity:0; user-select:none; -webkit-touch-callout:none; touch-action:none;
+    transition:filter .18s ease;
   }
   .stage:not(.is-open) .hex-face{ animation:none !important; opacity:0; }
   .stage.is-open .hex-face{ opacity:1; }
@@ -95,8 +96,6 @@
     display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
   }
 
-  .hex-face:hover{ background:var(--accent); }
-  .hex-face:hover .hex-inner{ background:#161616; }
   .hex-face .idx{ font-family:var(--font-mono); font-size:8.5px; color:var(--dim); letter-spacing:.08em; }
   .hex-face .name{ font-family:var(--font-head); font-size:10.5px; font-weight:600; letter-spacing:.03em; color:var(--fg); text-transform:uppercase; text-align:center; line-height:1.1; padding:0 14px; }
 
@@ -105,7 +104,10 @@
     box-shadow:0 0 16px -3px var(--tile-accent);
   }
   .hex-face[data-colored="1"] .hex-inner{ background:color-mix(in srgb, var(--tile-accent) 20%, var(--bg2)); }
-  .hex-face.pressing{ filter:brightness(1.35); }
+
+  /* press/hover highlight wins over a tile's own accent color — clear selection feedback */
+  .hex-face:hover, .hex-face.drag-hover{ background:var(--accent); }
+  .hex-face:hover .hex-inner, .hex-face.drag-hover .hex-inner{ background:#161616; }
 
   /* ===== ANIMATION 16 — Shatter Converge (outside-in) ===== */
   @keyframes shatter{
@@ -130,6 +132,14 @@
     font-family:var(--font-mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; cursor:pointer;
   }
   .color-popover .cp-reset:hover{ border-color:var(--fg); color:var(--fg); }
+
+  .toast{
+    position:fixed; left:50%; bottom:88px; z-index:30;
+    padding:10px 18px; background:rgba(13,13,13,.92); backdrop-filter:blur(6px); border:1px solid var(--border);
+    font-family:var(--font-mono); font-size:11px; letter-spacing:.14em; color:var(--fg); text-transform:uppercase;
+    opacity:0; pointer-events:none; transform:translate(-50%,10px); transition:opacity .2s ease, transform .2s ease;
+  }
+  .toast.show{ opacity:1; transform:translate(-50%,0); }
 </style>
 </head>
 <body>
@@ -160,6 +170,8 @@
   <button id="btn-toggle">Öffnen</button>
 </div>
 
+<div class="toast" id="toast"></div>
+
 <script>
 (function(){
   var APPS = ['TERMINAL','VAULT','COMMS','NETSCAN','ARCHIVE','MEDIA','CIPHER','GRIDMAP','LEDGER','RELAY',
@@ -188,7 +200,85 @@
   var hexCount = Number(countRange.value);
 
   var LONG_PRESS_MS = 500;
-  var MOVE_TOLERANCE = 8;
+
+  var toast = document.getElementById('toast');
+  var toastTimer = null;
+  function showToast(text){
+    toast.textContent = text;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toast.classList.remove('show'); }, 900);
+  }
+
+  // ---- press / drag-highlight / release-to-launch (mouse + touch) ----
+  var pressActive = false;
+  var activeFace = null, activeIdx = null;
+  var longPressTimer = null, longPressFired = false;
+  var lastPX = 0, lastPY = 0;
+
+  function clearLongPressTimer(){ if(longPressTimer){ clearTimeout(longPressTimer); longPressTimer = null; } }
+
+  function setActiveFace(face){
+    if(face === activeFace) return;
+    if(activeFace) activeFace.classList.remove('drag-hover');
+    activeFace = face;
+    activeIdx = face ? Number(face.dataset.idx) : null;
+    if(activeFace) activeFace.classList.add('drag-hover');
+    clearLongPressTimer();
+    longPressFired = false;
+    if(activeFace){
+      longPressTimer = setTimeout(function(){
+        longPressFired = true;
+        openColorPopover(activeIdx, lastPX, lastPY);
+      }, LONG_PRESS_MS);
+    }
+  }
+
+  function updateActiveFromPoint(x, y){
+    lastPX = x; lastPY = y;
+    var el = document.elementFromPoint(x, y);
+    setActiveFace(el ? el.closest('.hex-face') : null);
+  }
+
+  function launchActive(){
+    if(activeIdx === null) return;
+    var el = hexEls[activeIdx];
+    if(!el) return;
+    var face = el.firstChild;
+    face.style.filter = 'brightness(2.4)';
+    setTimeout(function(){ face.style.filter = ''; }, 160);
+    showToast('Starte ' + APPS[activeIdx % APPS.length]);
+  }
+
+  function endPress(){
+    clearLongPressTimer();
+    if(pressActive && !longPressFired) launchActive();
+    pressActive = false;
+    if(activeFace) activeFace.classList.remove('drag-hover');
+    activeFace = null; activeIdx = null;
+  }
+
+  hexfield.addEventListener('pointerdown', function(e){
+    if(!isOpen) return;
+    if(e.pointerType === 'mouse' && e.button !== 0) return;
+    pressActive = true;
+    updateActiveFromPoint(e.clientX, e.clientY);
+  });
+  document.addEventListener('pointermove', function(e){
+    if(!pressActive) return;
+    updateActiveFromPoint(e.clientX, e.clientY);
+  });
+  document.addEventListener('pointerup', function(){
+    if(!pressActive) return;
+    endPress();
+  });
+  document.addEventListener('pointercancel', function(){
+    if(!pressActive) return;
+    clearLongPressTimer();
+    pressActive = false;
+    if(activeFace) activeFace.classList.remove('drag-hover');
+    activeFace = null; activeIdx = null;
+  });
 
   // ---- color popover (built once) ----
   var popover = document.createElement('div');
@@ -277,6 +367,7 @@
     h.className = 'hex';
     var f = document.createElement('div');
     f.className = 'hex-face';
+    f.dataset.idx = idx;
     f.innerHTML =
       '<div class="hex-inner">' +
         '<div class="idx">APP_' + String(idx+1).padStart(2,'0') + '</div>' +
@@ -285,23 +376,6 @@
     h.appendChild(f);
     hexfield.appendChild(h);
 
-    var pressTimer = null, startX = 0, startY = 0;
-    function cancelPress(){ if(pressTimer){ clearTimeout(pressTimer); pressTimer = null; } f.classList.remove('pressing'); }
-    f.addEventListener('pointerdown', function(e){
-      if(e.pointerType === 'mouse' && e.button !== 0) return;
-      startX = e.clientX; startY = e.clientY;
-      f.classList.add('pressing');
-      pressTimer = setTimeout(function(){
-        pressTimer = null;
-        f.classList.remove('pressing');
-        openColorPopover(idx, e.clientX, e.clientY);
-      }, LONG_PRESS_MS);
-    });
-    f.addEventListener('pointermove', function(e){
-      if(pressTimer && (Math.abs(e.clientX-startX) > MOVE_TOLERANCE || Math.abs(e.clientY-startY) > MOVE_TOLERANCE)) cancelPress();
-    });
-    f.addEventListener('pointerup', cancelPress);
-    f.addEventListener('pointerleave', cancelPress);
     f.addEventListener('contextmenu', function(e){ e.preventDefault(); });
 
     hexEls.push(h);
