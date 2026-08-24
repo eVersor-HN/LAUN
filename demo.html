@@ -29,14 +29,17 @@
       radial-gradient(ellipse at 50% 50%, transparent 40%, rgba(0,0,0,0.6) 100%);
   }
 
+  /* app status readout — terminal style (variant 08), no box/border */
   .hud{
     position:fixed; top:18px; left:20px; z-index:5;
-    font-family:var(--font-mono); font-size:11px; letter-spacing:.08em; color:var(--dim); pointer-events:none;
+    font-family:var(--font-mono); font-size:11px; letter-spacing:.02em; color:var(--fg); pointer-events:none;
   }
-  .hud .dot{ display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--accent); margin-right:8px; box-shadow:0 0 8px var(--accent); animation:pulse 1.8s ease-in-out infinite; }
-  .hud b{ color:var(--fg); font-weight:500; }
+  .hud .prompt{ color:var(--dim); margin-right:8px; }
+  .hud .st{ color:var(--fg); font-weight:500; }
+  .hud .cursor{ display:inline-block; width:7px; height:12px; background:var(--fg); margin-left:6px; animation:blink 1s step-end infinite; vertical-align:-2px; }
   .hud.hidden{ display:none; }
   @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:.25;} }
+  @keyframes blink{ 0%,100%{opacity:1;} 50%{opacity:0;} }
 
   .tag{
     position:fixed; top:18px; right:20px; z-index:5;
@@ -150,7 +153,7 @@
 
 <div class="texture"></div>
 
-<div class="hud" id="hud"><span class="dot"></span>SYS://LAUNCHER&nbsp; STATUS: <b id="hud-status">STANDBY</b></div>
+<div class="hud" id="hud"><span class="prompt">&gt;</span>SYS.STATUS=<b class="st" id="hud-status">STANDBY</b>&nbsp; TIME=<span id="hud-clock">00:00:00</span>&nbsp; BAT=82%&nbsp; SIG=4/4&nbsp; APPS=<span id="hud-apps">30</span><span class="cursor"></span></div>
 <div class="tag">STYLE <b>07 — INK/WHITE</b><br>ANIM <b>16 — SHATTER CONVERGE</b></div>
 
 <div class="stage" id="stage">
@@ -200,6 +203,8 @@
   var stage = document.getElementById('stage');
   var hexfield = document.getElementById('hexfield');
   var hudStatus = document.getElementById('hud-status');
+  var hudClock = document.getElementById('hud-clock');
+  var hudApps = document.getElementById('hud-apps');
   var sizeRange = document.getElementById('size-range');
   var sizeVal = document.getElementById('size-val');
   var countRange = document.getElementById('count-range');
@@ -505,8 +510,16 @@
 
   sizeRange.addEventListener('input', function(e){ e.stopPropagation(); hexSize = Number(sizeRange.value); sizeVal.textContent = hexSize; layoutHexes(); });
   sizeRange.addEventListener('click', function(e){ e.stopPropagation(); });
-  countRange.addEventListener('input', function(e){ e.stopPropagation(); hexCount = Number(countRange.value); countVal.textContent = hexCount; ensureCount(hexCount); layoutHexes(); });
+  countRange.addEventListener('input', function(e){ e.stopPropagation(); hexCount = Number(countRange.value); countVal.textContent = hexCount; hudApps.textContent = hexCount; ensureCount(hexCount); layoutHexes(); });
   countRange.addEventListener('click', function(e){ e.stopPropagation(); });
+
+  function tickClock(){
+    var d = new Date();
+    hudClock.textContent = String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0');
+  }
+  tickClock();
+  setInterval(tickClock, 1000);
+  hudApps.textContent = hexCount;
 
   // ---- HUD status bar on/off ----
   var hud = document.getElementById('hud');

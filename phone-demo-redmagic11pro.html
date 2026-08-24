@@ -52,6 +52,29 @@
     transform:scale(calc(100% * 1));
   }
 
+  /* simulated Android system status bar — the OS bar, not LAUN's own readout */
+  .os-statusbar{
+    position:absolute; top:0; left:0; right:0; height:3.1%; z-index:2;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:0 4.5%; background:rgba(0,0,0,.001);
+    font-family:var(--font-mono); font-size:clamp(8px, 1.5vw, 12px); color:#fff; letter-spacing:.02em;
+    transition:opacity .2s ease;
+  }
+  .os-statusbar.hidden{ opacity:0; pointer-events:none; }
+  .os-statusbar .os-icons{ display:flex; align-items:center; gap:5px; }
+  .os-statusbar .os-signal{ display:flex; align-items:flex-end; gap:1.5px; height:60%; }
+  .os-statusbar .os-signal i{ width:2.2px; background:#fff; display:block; }
+  .os-statusbar .os-signal i:nth-child(1){ height:35%; } .os-statusbar .os-signal i:nth-child(2){ height:60%; }
+  .os-statusbar .os-signal i:nth-child(3){ height:80%; } .os-statusbar .os-signal i:nth-child(4){ height:100%; }
+  .os-statusbar .os-battery{ width:5.5%; aspect-ratio:2/1; border:1px solid #fff; border-radius:1px; position:relative; }
+  .os-statusbar .os-battery i{ display:block; height:100%; width:82%; background:#fff; }
+
+  .controls{ display:flex; flex-direction:column; gap:8px; align-items:center; }
+  .controls label{
+    display:flex; align-items:center; gap:8px; font-size:10.5px; letter-spacing:.06em; color:var(--dim); cursor:pointer;
+  }
+  .controls input[type=checkbox]{ width:14px; height:14px; accent-color:#fff; cursor:pointer; }
+
   .caption{ font-size:10.5px; color:var(--dim); letter-spacing:.06em; max-width:420px; text-align:center; line-height:1.6; }
   .caption a{ color:var(--dim); }
 </style>
@@ -67,13 +90,25 @@
   <div class="device">
     <div class="screen" id="screen">
       <iframe id="frame" src="demo.html?size=64&count=19&auto=1"></iframe>
+      <div class="os-statusbar" id="osbar">
+        <span id="os-clock">00:00</span>
+        <span class="os-icons">
+          <span class="os-signal"><i></i><i></i><i></i><i></i></span>
+          <span class="os-battery"><i></i></span>
+        </span>
+      </div>
     </div>
+  </div>
+
+  <div class="controls">
+    <label><input type="checkbox" id="os-toggle" checked> Android-Statusleiste anzeigen (Systemleiste, nicht LAUNs eigene)</label>
   </div>
 
   <div class="caption">
     Iframe läuft mit 405×896 CSS-Pixel (angenommene Geräte-Pixel-Dichte ≈3×, üblich für diese PPI-Klasse) und
     wird auf die reale 1216:2688-Bildschirmform skaliert. Größe/Anzahl der Kacheln sind für diese Breite vorgewählt,
-    über die Regler im Frame weiter anpassbar.
+    über die Regler im Frame weiter anpassbar. Die Systemleiste oben ist zur Veranschaulichung simuliert — in der
+    echten App steuert das eine native Android-Einstellung (Immersive Mode / WindowInsetsController), kein Webcode.
   </div>
 </div>
 
@@ -92,6 +127,20 @@
   fit();
   window.addEventListener('resize', fit);
   new ResizeObserver(fit).observe(screen);
+
+  var osClock = document.getElementById('os-clock');
+  function tick(){
+    var d = new Date();
+    osClock.textContent = String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  }
+  tick();
+  setInterval(tick, 1000 * 30);
+
+  var osbar = document.getElementById('osbar');
+  var osToggle = document.getElementById('os-toggle');
+  osToggle.addEventListener('change', function(){
+    osbar.classList.toggle('hidden', !osToggle.checked);
+  });
 })();
 </script>
 </body>
