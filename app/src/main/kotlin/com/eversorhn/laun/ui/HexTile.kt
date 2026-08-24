@@ -32,6 +32,12 @@ import com.eversorhn.laun.ui.theme.HeadFontFamily
 import com.eversorhn.laun.ui.theme.MonoFontFamily
 import kotlinx.coroutines.delay
 
+private fun lighten(color: Color, amount: Float): Color = Color(
+    red = color.red + (1f - color.red) * amount,
+    green = color.green + (1f - color.green) * amount,
+    blue = color.blue + (1f - color.blue) * amount
+)
+
 /** Pointy-top hexagon, matching demo.html's clip-path: polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%). */
 private val HexShape = GenericShape { size, _ ->
     moveTo(size.width * 0.5f, 0f)
@@ -69,12 +75,20 @@ internal fun HexTile(
         colorHex?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
     }
 
+    // Pressing a colored tile brightens its own color rather than replacing it with plain white —
+    // it should still read as "that" tile while held, not flash into a different, unrelated color.
     val ringColor = when {
+        isActive && tileColor != null -> lighten(tileColor, 0.45f)
         isActive -> LaunColors.accent
         tileColor != null -> tileColor
         else -> LaunColors.border
     }
     val faceColor = when {
+        isActive && tileColor != null -> Color(
+            red = (tileColor.red * 0.35f + LaunColors.bg2.red * 0.65f),
+            green = (tileColor.green * 0.35f + LaunColors.bg2.green * 0.65f),
+            blue = (tileColor.blue * 0.35f + LaunColors.bg2.blue * 0.65f)
+        )
         isActive -> Color(0xFF161616)
         tileColor != null -> Color(
             red = (tileColor.red * 0.2f + LaunColors.bg2.red * 0.8f),

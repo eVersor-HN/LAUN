@@ -98,7 +98,13 @@ fun LauncherScreen(
             },
             onLongPressBackground = { showSettings = true },
             onTapEmptySlot = { slotIndex -> appPickerSlot = slotIndex },
-            onLaunch = { app -> repository.launch(app.packageName) },
+            onLaunch = { app ->
+                // Collapse before leaving, not after coming back — otherwise returning via the
+                // back gesture (or task switcher) finds the grid still fully open, and its
+                // predictive-back preview flashes the open grid over the launched app.
+                isOpen = false
+                repository.launch(app.packageName)
+            },
             onShrinkToFitChange = { didShrinkToFit = it },
             modifier = Modifier
                 .fillMaxSize()
