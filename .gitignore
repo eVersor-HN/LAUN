@@ -1,1 +1,11 @@
 .claude/
+
+# Android / Gradle
+local.properties
+.gradle/
+.idea/
+*.iml
+build/
+app/build/
+captures/
+.cxx/
