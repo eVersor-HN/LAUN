@@ -100,7 +100,10 @@ fun LauncherScreen(
             onTapEmptySlot = { slotIndex -> appPickerSlot = slotIndex },
             onLaunch = { app -> repository.launch(app.packageName) },
             onShrinkToFitChange = { didShrinkToFit = it },
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .systemBarsPadding()
+                .padding(top = if (settings.hudVisible) 64.dp else 0.dp)
         )
 
         if (settings.hudVisible) {

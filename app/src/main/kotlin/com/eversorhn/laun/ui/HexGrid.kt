@@ -111,9 +111,14 @@ fun HexGrid(
             // Fill the actual screen rectangle (both width and height), not just a fixed
             // symmetric hex-of-hexes outline: find how many cols/rows fit at the requested tile
             // size, only shrinking the size if even a 1x1 grid wouldn't fit n tiles.
+            // Odd rows have one fewer cell (see below), so the real capacity is cols*rows minus
+            // the number of odd rows — using plain cols*rows here undercounted how much shrinking
+            // was needed and let n exceed the actual cell count, crashing the ranked[i] lookup below.
+            fun actualCapacity(c: RectCapacity) = c.cols * c.rows - c.rows / 2
+
             var hexW = hexSizeDp.toFloat()
             var cap = hexCapacity(hexW, availWDp, availHDp)
-            while (cap.cols * cap.rows < n && hexW > 20f) {
+            while (actualCapacity(cap) < n && hexW > 20f) {
                 hexW -= 1f
                 cap = hexCapacity(hexW, availWDp, availHDp)
             }
@@ -151,7 +156,9 @@ fun HexGrid(
             val offsetY = boxHDp / 2 - (minY + maxY) / 2
             val maxDist = ranked.maxOf { (_, dx, dy) -> sqrt(dx * dx + dy * dy) }.let { if (it == 0f) 1f else it }
 
-            val tileList = slots.mapIndexed { i, app ->
+            // Defensive: should always hold given actualCapacity() above, but never index past
+            // what actually got generated — degrade to fewer rendered tiles rather than crash.
+            val tileList = slots.take(ranked.size).mapIndexed { i, app ->
                 val (_, dx, dy) = ranked[i]
                 val dist = sqrt(dx * dx + dy * dy)
                 TileLayout(
