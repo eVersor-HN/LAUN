@@ -45,8 +45,6 @@ internal data class TileLayout(
     val centerYDp: Float,
     val widthDp: Dp,
     val heightDp: Dp,
-    val fxDp: Float,
-    val fyDp: Float,
     val delayMs: Int
 )
 
@@ -166,8 +164,6 @@ fun HexGrid(
                     centerYDp = offsetY + dy,
                     widthDp = hexW.dp,
                     heightDp = hexH.dp,
-                    fxDp = dx * 0.8f,
-                    fyDp = dy * 0.8f,
                     delayMs = ((maxDist - dist) / maxDist * 350f).toInt()
                 )
             }

@@ -18,10 +18,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -61,27 +59,20 @@ internal fun HexTile(
     val progress = remember(tile.index) { Animatable(0f) }
     // Re-rolled fresh on every open (not memoized to the layout), same as the demo re-randomizing
     // on every layoutHexes() call — without it every reopen would play the exact same motion.
-    // The jitter is what keeps neighboring tiles from moving in near-perfect unison; without it
-    // the smooth distance-based delay alone reads as one wave rather than individual tiles.
+    // The jitter is what keeps neighboring tiles from popping in at the exact same instant.
     val flourish = remember(tile.index, isOpen) {
-        Triple(Random.nextFloat() * 64f - 32f, Random.nextInt(-50, 51), Random.nextInt(480, 681))
+        Random.nextInt(-50, 51) to Random.nextInt(480, 681)
     }
-    val frDeg = flourish.first
     LaunchedEffect(isOpen, tile.delayMs, flourish) {
         if (isOpen) {
-            delay((tile.delayMs + flourish.second).coerceAtLeast(0).toLong())
-            progress.animateTo(1f, tween(flourish.third, easing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)))
+            delay((tile.delayMs + flourish.first).coerceAtLeast(0).toLong())
+            // Hex Iris: scale out of the center with a slight overshoot, no translation/rotation.
+            progress.animateTo(1f, tween(flourish.second, easing = CubicBezierEasing(0.34f, 1.56f, 0.64f, 1f)))
         } else {
-            // Shatter apart on close too, same per-tile stagger as the reveal (so it reads as
-            // the same effect in reverse), just quicker — closing should feel snappy, not slow.
             delay((tile.delayMs / 2).toLong())
-            progress.animateTo(0f, tween(280, easing = CubicBezierEasing(0.7f, 0f, 0.84f, 0f)))
+            progress.animateTo(0f, tween(260, easing = CubicBezierEasing(0.7f, 0f, 0.84f, 0f)))
         }
     }
-
-    val density = LocalDensity.current
-    val fxPx = with(density) { tile.fxDp.dp.toPx() }
-    val fyPx = with(density) { tile.fyDp.dp.toPx() }
 
     val tileColor = remember(colorHex) {
         colorHex?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
@@ -115,11 +106,8 @@ internal fun HexTile(
             .size(width = tile.widthDp, height = tile.heightDp)
             .graphicsLayer {
                 alpha = progress.value
-                scaleX = 0.9f
-                scaleY = 0.9f
-                translationX = (1f - progress.value) * fxPx
-                translationY = (1f - progress.value) * fyPx
-                rotationZ = (1f - progress.value) * frDeg
+                scaleX = progress.value * 0.9f
+                scaleY = progress.value * 0.9f
             }
             .clip(HexShape)
             .background(ringColor)
