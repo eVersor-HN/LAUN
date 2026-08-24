@@ -54,7 +54,7 @@ internal data class TileLayout(
 
 private data class LayoutResult(val tiles: List<TileLayout>, val shrunk: Boolean)
 
-private const val LAYOUT_MARGIN_DP = 16f
+private const val LAYOUT_MARGIN_DP = 32f
 private const val TILE_RENDER_SCALE = 0.9f
 
 /**
