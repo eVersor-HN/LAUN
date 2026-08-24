@@ -63,7 +63,10 @@ internal fun HexTile(
             delay(tile.delayMs.toLong())
             progress.animateTo(1f, tween(600, easing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)))
         } else {
-            progress.snapTo(0f)
+            // Shatter apart on close too, same per-tile stagger as the reveal (so it reads as
+            // the same effect in reverse), just quicker — closing should feel snappy, not slow.
+            delay((tile.delayMs / 2).toLong())
+            progress.animateTo(0f, tween(300, easing = CubicBezierEasing(0.7f, 0f, 0.84f, 0f)))
         }
     }
 

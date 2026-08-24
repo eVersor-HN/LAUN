@@ -168,8 +168,8 @@ fun HexGrid(
                     centerYDp = offsetY + dy,
                     widthDp = hexW.dp,
                     heightDp = hexH.dp,
-                    fxDp = dx * 0.5f,
-                    fyDp = dy * 0.5f,
+                    fxDp = dx * 0.8f,
+                    fyDp = dy * 0.8f,
                     frDeg = Random.nextFloat() * 40f - 20f,
                     delayMs = ((maxDist - dist) / maxDist * 420f).toInt()
                 )
