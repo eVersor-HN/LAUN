@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -41,17 +43,34 @@ fun SettingsSheet(
     didShrinkToFit: Boolean,
     hudVisible: Boolean,
     onHudVisibleChange: (Boolean) -> Unit,
+    hudShowStatus: Boolean,
+    onHudShowStatusChange: (Boolean) -> Unit,
+    hudShowClock: Boolean,
+    onHudShowClockChange: (Boolean) -> Unit,
+    hudShowBattery: Boolean,
+    onHudShowBatteryChange: (Boolean) -> Unit,
+    hudShowSignal: Boolean,
+    onHudShowSignalChange: (Boolean) -> Unit,
+    hudShowAppCount: Boolean,
+    onHudShowAppCountChange: (Boolean) -> Unit,
+    hudShowCursor: Boolean,
+    onHudShowCursorChange: (Boolean) -> Unit,
     immersiveEnabled: Boolean,
     onImmersiveEnabledChange: (Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(),
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = LaunColors.bg2,
         contentColor = LaunColors.fg
     ) {
-        Column(modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
             SettingRow(label = "GRÖSSE", value = "${hexSizeDp}dp") {
                 Slider(
                     value = hexSizeDp.toFloat(),
@@ -91,6 +110,16 @@ fun SettingsSheet(
             }
 
             ToggleRow(label = "HUD-STATUSLEISTE", checked = hudVisible, onCheckedChange = onHudVisibleChange)
+            if (hudVisible) {
+                Column(modifier = Modifier.padding(start = 12.dp)) {
+                    ToggleRow(label = "STATUS", checked = hudShowStatus, onCheckedChange = onHudShowStatusChange)
+                    ToggleRow(label = "UHRZEIT", checked = hudShowClock, onCheckedChange = onHudShowClockChange)
+                    ToggleRow(label = "AKKU", checked = hudShowBattery, onCheckedChange = onHudShowBatteryChange)
+                    ToggleRow(label = "SIGNAL", checked = hudShowSignal, onCheckedChange = onHudShowSignalChange)
+                    ToggleRow(label = "APP-ANZAHL", checked = hudShowAppCount, onCheckedChange = onHudShowAppCountChange)
+                    ToggleRow(label = "CURSOR", checked = hudShowCursor, onCheckedChange = onHudShowCursorChange)
+                }
+            }
             ToggleRow(label = "VOLLBILDMODUS", checked = immersiveEnabled, onCheckedChange = onImmersiveEnabledChange)
         }
     }

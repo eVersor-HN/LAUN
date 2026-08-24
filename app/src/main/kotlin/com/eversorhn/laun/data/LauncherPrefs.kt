@@ -18,6 +18,12 @@ data class LauncherSettings(
     val hexSizeDp: Int = 118,
     val hexCountIndex: Int = 3,
     val hudVisible: Boolean = true,
+    val hudShowStatus: Boolean = true,
+    val hudShowClock: Boolean = true,
+    val hudShowBattery: Boolean = true,
+    val hudShowSignal: Boolean = true,
+    val hudShowAppCount: Boolean = true,
+    val hudShowCursor: Boolean = true,
     val immersiveEnabled: Boolean = true,
     val tileColors: Map<String, String> = emptyMap(),
     val slotApps: Map<Int, String> = emptyMap()
@@ -38,6 +44,12 @@ class LauncherPrefs(private val context: Context) {
         val HEX_SIZE = intPreferencesKey("hex_size_dp")
         val HEX_COUNT_INDEX = intPreferencesKey("hex_count_index")
         val HUD_VISIBLE = booleanPreferencesKey("hud_visible")
+        val HUD_SHOW_STATUS = booleanPreferencesKey("hud_show_status")
+        val HUD_SHOW_CLOCK = booleanPreferencesKey("hud_show_clock")
+        val HUD_SHOW_BATTERY = booleanPreferencesKey("hud_show_battery")
+        val HUD_SHOW_SIGNAL = booleanPreferencesKey("hud_show_signal")
+        val HUD_SHOW_APP_COUNT = booleanPreferencesKey("hud_show_app_count")
+        val HUD_SHOW_CURSOR = booleanPreferencesKey("hud_show_cursor")
         val IMMERSIVE_ENABLED = booleanPreferencesKey("immersive_enabled")
         val TILE_COLORS = stringSetPreferencesKey("tile_colors")
         val SLOT_APPS = stringSetPreferencesKey("slot_apps")
@@ -48,6 +60,12 @@ class LauncherPrefs(private val context: Context) {
             hexSizeDp = prefs[Keys.HEX_SIZE] ?: 118,
             hexCountIndex = prefs[Keys.HEX_COUNT_INDEX] ?: 3,
             hudVisible = prefs[Keys.HUD_VISIBLE] ?: true,
+            hudShowStatus = prefs[Keys.HUD_SHOW_STATUS] ?: true,
+            hudShowClock = prefs[Keys.HUD_SHOW_CLOCK] ?: true,
+            hudShowBattery = prefs[Keys.HUD_SHOW_BATTERY] ?: true,
+            hudShowSignal = prefs[Keys.HUD_SHOW_SIGNAL] ?: true,
+            hudShowAppCount = prefs[Keys.HUD_SHOW_APP_COUNT] ?: true,
+            hudShowCursor = prefs[Keys.HUD_SHOW_CURSOR] ?: true,
             immersiveEnabled = prefs[Keys.IMMERSIVE_ENABLED] ?: true,
             tileColors = (prefs[Keys.TILE_COLORS] ?: emptySet())
                 .mapNotNull { entry ->
@@ -74,6 +92,30 @@ class LauncherPrefs(private val context: Context) {
 
     suspend fun setHudVisible(visible: Boolean) {
         context.dataStore.edit { it[Keys.HUD_VISIBLE] = visible }
+    }
+
+    suspend fun setHudShowStatus(visible: Boolean) {
+        context.dataStore.edit { it[Keys.HUD_SHOW_STATUS] = visible }
+    }
+
+    suspend fun setHudShowClock(visible: Boolean) {
+        context.dataStore.edit { it[Keys.HUD_SHOW_CLOCK] = visible }
+    }
+
+    suspend fun setHudShowBattery(visible: Boolean) {
+        context.dataStore.edit { it[Keys.HUD_SHOW_BATTERY] = visible }
+    }
+
+    suspend fun setHudShowSignal(visible: Boolean) {
+        context.dataStore.edit { it[Keys.HUD_SHOW_SIGNAL] = visible }
+    }
+
+    suspend fun setHudShowAppCount(visible: Boolean) {
+        context.dataStore.edit { it[Keys.HUD_SHOW_APP_COUNT] = visible }
+    }
+
+    suspend fun setHudShowCursor(visible: Boolean) {
+        context.dataStore.edit { it[Keys.HUD_SHOW_CURSOR] = visible }
     }
 
     suspend fun setImmersiveEnabled(enabled: Boolean) {

@@ -110,6 +110,12 @@ fun LauncherScreen(
             StatusBar(
                 isOpen = isOpen,
                 appCount = settings.slotApps.size,
+                showStatus = settings.hudShowStatus,
+                showClock = settings.hudShowClock,
+                showBattery = settings.hudShowBattery,
+                showSignal = settings.hudShowSignal,
+                showAppCount = settings.hudShowAppCount,
+                showCursor = settings.hudShowCursor,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .fillMaxWidth()
@@ -164,6 +170,18 @@ fun LauncherScreen(
             didShrinkToFit = didShrinkToFit,
             hudVisible = settings.hudVisible,
             onHudVisibleChange = { scope.launch { prefs.setHudVisible(it) } },
+            hudShowStatus = settings.hudShowStatus,
+            onHudShowStatusChange = { scope.launch { prefs.setHudShowStatus(it) } },
+            hudShowClock = settings.hudShowClock,
+            onHudShowClockChange = { scope.launch { prefs.setHudShowClock(it) } },
+            hudShowBattery = settings.hudShowBattery,
+            onHudShowBatteryChange = { scope.launch { prefs.setHudShowBattery(it) } },
+            hudShowSignal = settings.hudShowSignal,
+            onHudShowSignalChange = { scope.launch { prefs.setHudShowSignal(it) } },
+            hudShowAppCount = settings.hudShowAppCount,
+            onHudShowAppCountChange = { scope.launch { prefs.setHudShowAppCount(it) } },
+            hudShowCursor = settings.hudShowCursor,
+            onHudShowCursorChange = { scope.launch { prefs.setHudShowCursor(it) } },
             immersiveEnabled = settings.immersiveEnabled,
             onImmersiveEnabledChange = {
                 scope.launch { prefs.setImmersiveEnabled(it) }

@@ -59,6 +59,12 @@ private fun readNetworkConnected(context: Context): Boolean {
 fun StatusBar(
     isOpen: Boolean,
     appCount: Int,
+    showStatus: Boolean,
+    showClock: Boolean,
+    showBattery: Boolean,
+    showSignal: Boolean,
+    showAppCount: Boolean,
+    showCursor: Boolean,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -83,44 +89,51 @@ fun StatusBar(
         }
     }
 
-    // A true-centered clock (not just "centered in leftover space") needs the trailing group's
-    // width reserved on the left too — an invisible mirror copy does that without a custom layout.
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        StatusEndGroup(isOpen, battery, connected, appCount, cursorOn, modifier = Modifier.alpha(0f))
-        MonoText(clock, LaunColors.fg)
-        StatusEndGroup(isOpen, battery, connected, appCount, cursorOn)
+    val endGroup: @Composable (Modifier) -> Unit = { groupModifier ->
+        Row(
+            modifier = groupModifier,
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            if (showStatus) {
+                MonoText(">", LaunColors.dim)
+                MonoText(if (isOpen) "ACTIVE" else "STANDBY", LaunColors.fg)
+            }
+            if (showBattery) BatteryGlyph(percent = battery)
+            if (showSignal) SignalGlyph(active = connected)
+            if (showAppCount) MonoText("$appCount", LaunColors.fg)
+            if (showCursor) {
+                Box(
+                    modifier = Modifier
+                        .width(7.dp)
+                        .height(12.dp)
+                        .background(if (cursorOn) LaunColors.fg else Color.Transparent)
+                )
+            }
+        }
     }
-}
 
-@Composable
-private fun StatusEndGroup(
-    isOpen: Boolean,
-    battery: Int,
-    connected: Boolean,
-    appCount: Int,
-    cursorOn: Boolean,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        MonoText(">", LaunColors.dim)
-        MonoText(if (isOpen) "ACTIVE" else "STANDBY", LaunColors.fg)
-        BatteryGlyph(percent = battery)
-        SignalGlyph(active = connected)
-        MonoText("$appCount", LaunColors.fg)
-        Box(
-            modifier = Modifier
-                .width(7.dp)
-                .height(12.dp)
-                .background(if (cursorOn) LaunColors.fg else Color.Transparent)
-        )
+    if (showClock) {
+        // A true-centered clock (not just "centered in leftover space") needs the trailing
+        // group's width reserved on the left too — an invisible mirror does that without a
+        // custom layout.
+        Row(
+            modifier = modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            endGroup(Modifier.alpha(0f))
+            MonoText(clock, LaunColors.fg)
+            endGroup(Modifier)
+        }
+    } else {
+        Row(
+            modifier = modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.End
+        ) {
+            endGroup(Modifier)
+        }
     }
 }
 
