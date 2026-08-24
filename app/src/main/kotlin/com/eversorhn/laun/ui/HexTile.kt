@@ -31,6 +31,7 @@ import com.eversorhn.laun.ui.theme.LaunColors
 import com.eversorhn.laun.ui.theme.HeadFontFamily
 import com.eversorhn.laun.ui.theme.MonoFontFamily
 import kotlinx.coroutines.delay
+import kotlin.random.Random
 
 private fun lighten(color: Color, amount: Float): Color = Color(
     red = color.red + (1f - color.red) * amount,
@@ -58,15 +59,23 @@ internal fun HexTile(
     modifier: Modifier = Modifier
 ) {
     val progress = remember(tile.index) { Animatable(0f) }
-    LaunchedEffect(isOpen, tile.delayMs) {
+    // Re-rolled fresh on every open (not memoized to the layout), same as the demo re-randomizing
+    // on every layoutHexes() call — without it every reopen would play the exact same motion.
+    // The jitter is what keeps neighboring tiles from moving in near-perfect unison; without it
+    // the smooth distance-based delay alone reads as one wave rather than individual tiles.
+    val flourish = remember(tile.index, isOpen) {
+        Triple(Random.nextFloat() * 64f - 32f, Random.nextInt(-50, 51), Random.nextInt(480, 681))
+    }
+    val frDeg = flourish.first
+    LaunchedEffect(isOpen, tile.delayMs, flourish) {
         if (isOpen) {
-            delay(tile.delayMs.toLong())
-            progress.animateTo(1f, tween(600, easing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)))
+            delay((tile.delayMs + flourish.second).coerceAtLeast(0).toLong())
+            progress.animateTo(1f, tween(flourish.third, easing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)))
         } else {
             // Shatter apart on close too, same per-tile stagger as the reveal (so it reads as
             // the same effect in reverse), just quicker — closing should feel snappy, not slow.
             delay((tile.delayMs / 2).toLong())
-            progress.animateTo(0f, tween(300, easing = CubicBezierEasing(0.7f, 0f, 0.84f, 0f)))
+            progress.animateTo(0f, tween(280, easing = CubicBezierEasing(0.7f, 0f, 0.84f, 0f)))
         }
     }
 
@@ -110,7 +119,7 @@ internal fun HexTile(
                 scaleY = 0.9f
                 translationX = (1f - progress.value) * fxPx
                 translationY = (1f - progress.value) * fyPx
-                rotationZ = (1f - progress.value) * tile.frDeg
+                rotationZ = (1f - progress.value) * frDeg
             }
             .clip(HexShape)
             .background(ringColor)

@@ -26,7 +26,6 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
-import kotlin.random.Random
 
 private data class RectCapacity(val cols: Int, val rows: Int, val hexH: Float)
 
@@ -48,7 +47,6 @@ internal data class TileLayout(
     val heightDp: Dp,
     val fxDp: Float,
     val fyDp: Float,
-    val frDeg: Float,
     val delayMs: Int
 )
 
@@ -170,8 +168,7 @@ fun HexGrid(
                     heightDp = hexH.dp,
                     fxDp = dx * 0.8f,
                     fyDp = dy * 0.8f,
-                    frDeg = Random.nextFloat() * 40f - 20f,
-                    delayMs = ((maxDist - dist) / maxDist * 420f).toInt()
+                    delayMs = ((maxDist - dist) / maxDist * 350f).toInt()
                 )
             }
             LayoutResult(tileList, shrunk = hexW < hexSizeDp.toFloat() - 0.5f)
