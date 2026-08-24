@@ -76,26 +76,35 @@
   .hexfield{ position:absolute; inset:0; }
 
   .hex{ position:absolute; transition:left .25s ease, top .25s ease, width .25s ease, height .25s ease; }
+  /* .hex-face = the ring (colored outline). .hex-inner = the dark face, inset so only a clean
+     stroke of ring color shows. Avoids the antialiasing seam that `border` + `clip-path` causes. */
   .hex-face{
-    width:100%; height:100%;
+    position:relative; width:100%; height:100%;
     clip-path:polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-    background:var(--bg2); border:1px solid var(--border);
-    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+    background:var(--border);
     transform:scale(.9); transform-origin:center; cursor:pointer;
     opacity:0; user-select:none; -webkit-touch-callout:none;
   }
   .stage:not(.is-open) .hex-face{ animation:none !important; opacity:0; }
   .stage.is-open .hex-face{ opacity:1; }
 
-  .hex-face:hover{ border-color:var(--accent); background:#161616; }
-  .hex-face .idx{ font-family:var(--font-mono); font-size:8.5px; color:var(--dim); letter-spacing:.08em; position:relative; z-index:1; }
-  .hex-face .name{ font-family:var(--font-head); font-size:10.5px; font-weight:600; letter-spacing:.03em; color:var(--fg); text-transform:uppercase; text-align:center; line-height:1.1; padding:0 14px; position:relative; z-index:1; }
+  .hex-inner{
+    position:absolute; inset:2px;
+    clip-path:polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    background:var(--bg2);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  }
+
+  .hex-face:hover{ background:var(--accent); }
+  .hex-face:hover .hex-inner{ background:#161616; }
+  .hex-face .idx{ font-family:var(--font-mono); font-size:8.5px; color:var(--dim); letter-spacing:.08em; }
+  .hex-face .name{ font-family:var(--font-head); font-size:10.5px; font-weight:600; letter-spacing:.03em; color:var(--fg); text-transform:uppercase; text-align:center; line-height:1.1; padding:0 14px; }
 
   .hex-face[data-colored="1"]{
-    border-color:var(--tile-accent);
-    background:color-mix(in srgb, var(--tile-accent) 20%, var(--bg2));
+    background:var(--tile-accent);
     box-shadow:0 0 16px -3px var(--tile-accent);
   }
+  .hex-face[data-colored="1"] .hex-inner{ background:color-mix(in srgb, var(--tile-accent) 20%, var(--bg2)); }
   .hex-face.pressing{ filter:brightness(1.35); }
 
   /* ===== ANIMATION 16 — Shatter Converge (outside-in) ===== */
@@ -269,8 +278,10 @@
     var f = document.createElement('div');
     f.className = 'hex-face';
     f.innerHTML =
-      '<div class="idx">APP_' + String(idx+1).padStart(2,'0') + '</div>' +
-      '<div class="name">' + APPS[idx % APPS.length] + '</div>';
+      '<div class="hex-inner">' +
+        '<div class="idx">APP_' + String(idx+1).padStart(2,'0') + '</div>' +
+        '<div class="name">' + APPS[idx % APPS.length] + '</div>' +
+      '</div>';
     h.appendChild(f);
     hexfield.appendChild(h);
 
