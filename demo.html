@@ -31,12 +31,23 @@
 
   /* app status readout — terminal style (variant 08), no box/border */
   .hud{
-    position:fixed; top:18px; left:20px; z-index:5;
-    font-family:var(--font-mono); font-size:11px; letter-spacing:.02em; color:var(--fg); pointer-events:none;
+    position:fixed; top:20px; left:20px; z-index:5;
+    display:flex; align-items:center; gap:9px;
+    font-family:var(--font-mono); font-size:11px; letter-spacing:.03em; color:var(--fg); pointer-events:none;
   }
-  .hud .prompt{ color:var(--dim); margin-right:8px; }
+  .hud .prompt{ color:var(--dim); }
   .hud .st{ color:var(--fg); font-weight:500; }
-  .hud .cursor{ display:inline-block; width:7px; height:12px; background:var(--fg); margin-left:6px; animation:blink 1s step-end infinite; vertical-align:-2px; }
+  .hud .sep{ color:var(--dim2); }
+  .hud .lbl{ color:var(--dim); margin-right:4px; }
+  .hud .cursor{ width:7px; height:12px; background:var(--fg); animation:blink 1s step-end infinite; flex:none; }
+  .hud .signal{ display:flex; align-items:flex-end; gap:2px; height:10px; flex:none; }
+  .hud .signal i{ width:2.5px; background:var(--dim2); display:block; }
+  .hud .signal i:nth-child(1){ height:35%; } .hud .signal i:nth-child(2){ height:58%; }
+  .hud .signal i:nth-child(3){ height:80%; } .hud .signal i:nth-child(4){ height:100%; }
+  .hud .signal.active i{ background:var(--fg); }
+  .hud .battery{ width:19px; height:10px; border:1px solid var(--dim); position:relative; flex:none; }
+  .hud .battery::after{ content:''; position:absolute; right:-3px; top:2.5px; width:2px; height:4px; background:var(--dim); }
+  .hud .battery i{ display:block; height:100%; background:var(--fg); width:82%; }
   .hud.hidden{ display:none; }
   @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:.25;} }
   @keyframes blink{ 0%,100%{opacity:1;} 50%{opacity:0;} }
@@ -153,7 +164,19 @@
 
 <div class="texture"></div>
 
-<div class="hud" id="hud"><span class="prompt">&gt;</span>SYS.STATUS=<b class="st" id="hud-status">STANDBY</b>&nbsp; TIME=<span id="hud-clock">00:00:00</span>&nbsp; BAT=82%&nbsp; SIG=4/4&nbsp; APPS=<span id="hud-apps">30</span><span class="cursor"></span></div>
+<div class="hud" id="hud">
+  <span class="prompt">&gt;</span>
+  <b class="st" id="hud-status">STANDBY</b>
+  <span class="sep">·</span>
+  <span id="hud-clock">00:00:00</span>
+  <span class="sep">·</span>
+  <span class="battery"><i></i></span>
+  <span class="sep">·</span>
+  <span class="signal active"><i></i><i></i><i></i><i></i></span>
+  <span class="sep">·</span>
+  <span><b id="hud-apps">30</b>&nbsp;<span class="lbl">APPS</span></span>
+  <span class="cursor"></span>
+</div>
 <div class="tag">STYLE <b>07 — INK/WHITE</b><br>ANIM <b>16 — SHATTER CONVERGE</b></div>
 
 <div class="stage" id="stage">
@@ -197,8 +220,6 @@
     '#00e5ff','#ffb020','#ff2d3c','#3d7dff','#aef000','#ff2fb0','#ffffff','#dfe6ee','#d4af37','#1fd3c4',
     '#ff6b35','#a855f7','#84cc16','#f43f5e','#6366f1','#facc15','#fb7185','#c026d3','#34d399','#64748b'
   ];
-
-  var HEX_DIRS = [[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
 
   var stage = document.getElementById('stage');
   var hexfield = document.getElementById('hexfield');
@@ -368,26 +389,6 @@
     });
   }
 
-  // ---- hex spiral: index 0 = center, then ring 1, ring 2, ... (growth stays centered) ----
-  function hexRing(radius){
-    if(radius === 0) return [{q:0,r:0,ring:0}];
-    var res = [];
-    var q = HEX_DIRS[4][0]*radius, r = HEX_DIRS[4][1]*radius;
-    for(var side=0; side<6; side++){
-      for(var step=0; step<radius; step++){
-        res.push({q:q, r:r, ring:radius});
-        q += HEX_DIRS[side][0]; r += HEX_DIRS[side][1];
-      }
-    }
-    return res;
-  }
-  function hexSpiral(n){
-    var list = [{q:0,r:0,ring:0}];
-    var ring = 1;
-    while(list.length < n){ list = list.concat(hexRing(ring)); ring++; }
-    return list.slice(0, n);
-  }
-
   function makeHex(idx){
     var h = document.createElement('div');
     h.className = 'hex';
@@ -413,51 +414,65 @@
     while(hexEls.length > n){ hexfield.removeChild(hexEls.pop()); }
   }
 
-  // pointy-top axial hex grid, spiraling out from the center; auto-shrinks to stay within the screen
+  // Honeycomb fills the full available rectangle (uses width AND height) before shrinking.
+  // At the requested tile size, figure out how many columns/rows actually fit on screen; only
+  // once that capacity is smaller than the tile count does the tile size step down.
   var LAYOUT_MARGIN = 16;
-  function computeHexGeometry(coords, hexW){
-    var s = hexW / Math.sqrt(3);
-    var hexH = s * 2;
-    var pts = coords.map(function(c){
-      return { x: s*Math.sqrt(3)*(c.q + c.r/2), y: s*1.5*c.r, ring: c.ring };
-    });
-    var minX=0,maxX=0,minY=0,maxY=0;
-    pts.forEach(function(p){
-      minX = Math.min(minX, p.x - hexW/2); maxX = Math.max(maxX, p.x + hexW/2);
-      minY = Math.min(minY, p.y - hexH/2); maxY = Math.max(maxY, p.y + hexH/2);
-    });
-    return { hexW:hexW, hexH:hexH, pts:pts, totalW: maxX-minX, totalH: maxY-minY, minX:minX, maxX:maxX, minY:minY, maxY:maxY };
+
+  function hexCapacity(hexW, availW, availH){
+    var s = hexW / Math.sqrt(3), hexH = s * 2;
+    var cols = Math.max(1, Math.floor(availW / hexW));
+    var rows = Math.max(1, Math.floor((availH - hexH * 0.25) / (hexH * 0.75)) + 1);
+    return { cols: cols, rows: rows, hexH: hexH };
   }
 
   function layoutHexes(){
     var w = hexfield.clientWidth, h = hexfield.clientHeight;
-    var coords = hexSpiral(hexEls.length);
-    var availW = Math.max(40, w - LAYOUT_MARGIN*2);
-    var availH = Math.max(40, h - LAYOUT_MARGIN*2);
+    var n = hexEls.length;
+    var availW = Math.max(40, w - LAYOUT_MARGIN * 2);
+    var availH = Math.max(40, h - LAYOUT_MARGIN * 2);
 
-    var geo = computeHexGeometry(coords, hexSize);
-    var scale = Math.min(1, availW / geo.totalW, availH / geo.totalH);
-    if(scale < 1) geo = computeHexGeometry(coords, hexSize * scale);
+    var hexW = hexSize;
+    var cap = hexCapacity(hexW, availW, availH);
+    while(cap.cols * cap.rows < n && hexW > 20){ hexW -= 1; cap = hexCapacity(hexW, availW, availH); }
 
-    var hexW = geo.hexW, hexH = geo.hexH, pts = geo.pts;
-    var offsetX = w/2 - (geo.minX+geo.maxX)/2;
-    var offsetY = h/2 - (geo.minY+geo.maxY)/2;
+    var cols = cap.cols, rows = cap.rows, hexH = cap.hexH;
 
-    var maxRing = pts.reduce(function(m,p){ return Math.max(m,p.ring); }, 0);
+    // every honeycomb cell that fits the rectangle, offset-staggered rows
+    var cells = [];
+    for(var row = 0; row < rows; row++){
+      for(var col = 0; col < cols; col++){
+        cells.push({ x: col * hexW + (row % 2 ? hexW / 2 : 0), y: row * hexH * 0.75 });
+      }
+    }
+    var cx = cells.reduce(function(s,c){ return s + c.x; }, 0) / cells.length;
+    var cy = cells.reduce(function(s,c){ return s + c.y; }, 0) / cells.length;
+    cells.forEach(function(c){ c.dx = c.x - cx; c.dy = c.y - cy; c.dist = Math.hypot(c.dx, c.dy); });
+    cells.sort(function(a,b){ return a.dist - b.dist; });
+    var pts = cells.slice(0, n);
+
+    var minX=Infinity, maxX=-Infinity, minY=Infinity, maxY=-Infinity;
+    pts.forEach(function(p){
+      minX = Math.min(minX, p.dx - hexW/2); maxX = Math.max(maxX, p.dx + hexW/2);
+      minY = Math.min(minY, p.dy - hexH/2); maxY = Math.max(maxY, p.dy + hexH/2);
+    });
+    var offsetX = w/2 - (minX+maxX)/2;
+    var offsetY = h/2 - (minY+maxY)/2;
+    var maxDist = pts.reduce(function(m,p){ return Math.max(m, p.dist); }, 0);
 
     hexEls.forEach(function(el, i){
       var p = pts[i];
       el.style.width = hexW + 'px';
       el.style.height = hexH + 'px';
-      el.style.left = (offsetX + p.x - hexW/2) + 'px';
-      el.style.top = (offsetY + p.y - hexH/2) + 'px';
+      el.style.left = (offsetX + p.dx - hexW/2) + 'px';
+      el.style.top = (offsetY + p.dy - hexH/2) + 'px';
 
       var face = el.firstChild;
-      face.style.setProperty('--fx', (p.x*0.5) + 'px');
-      face.style.setProperty('--fy', (p.y*0.5) + 'px');
+      face.style.setProperty('--fx', (p.dx*0.5) + 'px');
+      face.style.setProperty('--fy', (p.dy*0.5) + 'px');
       face.style.setProperty('--fr', (Math.random()*40-20).toFixed(1) + 'deg');
-      // outside-in: outer rings fire first, center fires last
-      face.style.animationDelay = ((maxRing - p.ring) * 70) + 'ms';
+      // outside-in: cells furthest from center fire first, center fires last
+      face.style.animationDelay = (maxDist > 0 ? (maxDist - p.dist) / maxDist * 420 : 0).toFixed(0) + 'ms';
     });
   }
 
