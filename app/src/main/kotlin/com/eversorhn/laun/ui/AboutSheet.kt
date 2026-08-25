@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -27,6 +28,12 @@ private const val REPO_URL = "https://github.com/eVersor-HN/LAUN"
 @Composable
 fun AboutSheet(immersiveEnabled: Boolean, onDismiss: () -> Unit) {
     val context = LocalContext.current
+    // Read from the installed package instead of a hardcoded literal — a hand-maintained version
+    // string here silently drifted three releases behind build.gradle.kts's actual versionName.
+    val versionName = remember {
+        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
+            .getOrNull()
+    }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         HideSystemBarsWhileShown(immersiveEnabled)
@@ -46,7 +53,7 @@ fun AboutSheet(immersiveEnabled: Boolean, onDismiss: () -> Unit) {
                 fontSize = 18.sp
             )
             Text(
-                text = "v0.3.0",
+                text = versionName?.let { "v$it" } ?: "",
                 color = LaunColors.dim,
                 fontFamily = MonoFontFamily,
                 fontSize = 10.sp,

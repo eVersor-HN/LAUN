@@ -76,8 +76,18 @@ data class LauncherSettings(
      *  precisely on its own small hex hitbox, and it snaps to whichever slot is closest — the
      *  freedom of dragging anywhere, but always landing grid-aligned like a normal drag. */
     val snapMode: Boolean = false,
+    /** When on, a drag can also target empty grid cells beyond the current [hexCount] tiles —
+     *  as many as still physically fit on screen at the current tile size — instead of only the
+     *  cells already in play. Dropping onto one of those pins the tile there directly, without
+     *  touching any other tile or growing COUNT; dropping onto an already-occupied cell (in range
+     *  or beyond it) still swaps, same as a normal drag. */
+    val freeTilePlacement: Boolean = false,
     /** Seconds of holding still on a tile before its color menu opens by itself — 1..60. */
     val colorMenuAutoOpenSeconds: Int = 1,
+    /** Seconds of holding still on empty background before the main SETTINGS sheet opens by
+     *  itself — 1..60, same shape as [colorMenuAutoOpenSeconds] but for the background long-press
+     *  instead of a tile's own long-press. */
+    val mainMenuAutoOpenSeconds: Int = 1,
     /** Per-slot size override as a percent of the global SIZE setting — 50..200. A slot with no
      *  entry here renders at the normal, shared tile size. Set via the tile color menu's own SIZE
      *  slider, independent of position — resizing doesn't move the tile or its neighbors. */
@@ -89,7 +99,19 @@ data class LauncherSettings(
     /** Per-app package name -> (icon pack package name, drawable name), set via an installed icon
      *  pack's own catalogue instead of the app's real icon or its name text. Overrides both the
      *  label and the icon everywhere that app's tile is drawn; resettable independently per app. */
-    val tileIconOverrides: Map<String, Pair<String, String>> = emptyMap()
+    val tileIconOverrides: Map<String, Pair<String, String>> = emptyMap(),
+    /** Extra gap between adjacent tile centers, dp — 0 is edge-to-edge, the honeycomb's original
+     *  look. Shrinks how many tiles fit on screen at the current SIZE, same as a bigger SIZE would. */
+    val tileSpacingDp: Int = 0,
+    /** Screen margin per edge, dp, independent of the other three. */
+    val marginTopDp: Int = 32,
+    val marginBottomDp: Int = 32,
+    val marginStartDp: Int = 32,
+    val marginEndDp: Int = 32,
+    /** When on, an unassigned slot isn't drawn while idle — no "+" placeholder — though it's still
+     *  there and still tappable to assign an app; see HexGrid's own doc for the one exception
+     *  (whichever empty slot is currently under the finger). */
+    val hideEmptyTiles: Boolean = false
 )
 
 /** Rename is meant to shorten a label for a tile, not hold a paragraph — also keeps the picker
@@ -145,11 +167,19 @@ class LauncherPrefs(private val context: Context) {
         val CUSTOM_APP_NAMES = stringSetPreferencesKey("custom_app_names")
         val FREE_POSITION_MODE = booleanPreferencesKey("free_position_mode")
         val SNAP_MODE = booleanPreferencesKey("snap_mode")
+        val FREE_TILE_PLACEMENT = booleanPreferencesKey("free_tile_placement")
         val FREEFORM_POSITIONS = stringSetPreferencesKey("freeform_positions")
         val COLOR_MENU_AUTO_OPEN_SECONDS = intPreferencesKey("color_menu_auto_open_seconds")
+        val MAIN_MENU_AUTO_OPEN_SECONDS = intPreferencesKey("main_menu_auto_open_seconds")
         val TILE_SIZE_OVERRIDES = stringSetPreferencesKey("tile_size_overrides")
         val TILE_ICON_OVERRIDES = stringSetPreferencesKey("tile_icon_overrides")
         val ALWAYS_SHOW_GRID = booleanPreferencesKey("always_show_grid")
+        val TILE_SPACING = intPreferencesKey("tile_spacing_dp")
+        val MARGIN_TOP = intPreferencesKey("margin_top_dp")
+        val MARGIN_BOTTOM = intPreferencesKey("margin_bottom_dp")
+        val MARGIN_START = intPreferencesKey("margin_start_dp")
+        val MARGIN_END = intPreferencesKey("margin_end_dp")
+        val HIDE_EMPTY_TILES = booleanPreferencesKey("hide_empty_tiles")
     }
 
     val settings: Flow<LauncherSettings> = context.dataStore.data.map { prefs ->
@@ -205,6 +235,7 @@ class LauncherPrefs(private val context: Context) {
                 .toMap(),
             freePositionMode = prefs[Keys.FREE_POSITION_MODE] ?: false,
             snapMode = prefs[Keys.SNAP_MODE] ?: false,
+            freeTilePlacement = prefs[Keys.FREE_TILE_PLACEMENT] ?: false,
             freeformPositions = (prefs[Keys.FREEFORM_POSITIONS] ?: emptySet())
                 .mapNotNull { entry ->
                     val parts = entry.split('|')
@@ -216,6 +247,7 @@ class LauncherPrefs(private val context: Context) {
                 }
                 .toMap(),
             colorMenuAutoOpenSeconds = (prefs[Keys.COLOR_MENU_AUTO_OPEN_SECONDS] ?: 1).coerceIn(1, 60),
+            mainMenuAutoOpenSeconds = (prefs[Keys.MAIN_MENU_AUTO_OPEN_SECONDS] ?: 1).coerceIn(1, 60),
             tileSizeOverrides = (prefs[Keys.TILE_SIZE_OVERRIDES] ?: emptySet())
                 .mapNotNull { entry ->
                     val i = entry.indexOf('|')
@@ -232,7 +264,13 @@ class LauncherPrefs(private val context: Context) {
                     if (parts.size != 3) return@mapNotNull null
                     parts[0] to (parts[1] to parts[2])
                 }
-                .toMap()
+                .toMap(),
+            tileSpacingDp = (prefs[Keys.TILE_SPACING] ?: 0).coerceIn(0, 100),
+            marginTopDp = (prefs[Keys.MARGIN_TOP] ?: 32).coerceIn(0, 200),
+            marginBottomDp = (prefs[Keys.MARGIN_BOTTOM] ?: 32).coerceIn(0, 200),
+            marginStartDp = (prefs[Keys.MARGIN_START] ?: 32).coerceIn(0, 200),
+            marginEndDp = (prefs[Keys.MARGIN_END] ?: 32).coerceIn(0, 200),
+            hideEmptyTiles = prefs[Keys.HIDE_EMPTY_TILES] ?: false
         )
     }
 
@@ -379,8 +417,16 @@ class LauncherPrefs(private val context: Context) {
             prefs.remove(Keys.BACKGROUND_COLOR)
             prefs[Keys.FREE_POSITION_MODE] = d.freePositionMode
             prefs[Keys.SNAP_MODE] = d.snapMode
+            prefs[Keys.FREE_TILE_PLACEMENT] = d.freeTilePlacement
             prefs[Keys.COLOR_MENU_AUTO_OPEN_SECONDS] = d.colorMenuAutoOpenSeconds
+            prefs[Keys.MAIN_MENU_AUTO_OPEN_SECONDS] = d.mainMenuAutoOpenSeconds
             prefs[Keys.ALWAYS_SHOW_GRID] = d.alwaysShowGrid
+            prefs[Keys.TILE_SPACING] = d.tileSpacingDp
+            prefs[Keys.MARGIN_TOP] = d.marginTopDp
+            prefs[Keys.MARGIN_BOTTOM] = d.marginBottomDp
+            prefs[Keys.MARGIN_START] = d.marginStartDp
+            prefs[Keys.MARGIN_END] = d.marginEndDp
+            prefs[Keys.HIDE_EMPTY_TILES] = d.hideEmptyTiles
         }
     }
 
@@ -408,6 +454,10 @@ class LauncherPrefs(private val context: Context) {
 
     suspend fun setColorMenuAutoOpenSeconds(seconds: Int) {
         context.dataStore.edit { it[Keys.COLOR_MENU_AUTO_OPEN_SECONDS] = seconds.coerceIn(1, 60) }
+    }
+
+    suspend fun setMainMenuAutoOpenSeconds(seconds: Int) {
+        context.dataStore.edit { it[Keys.MAIN_MENU_AUTO_OPEN_SECONDS] = seconds.coerceIn(1, 60) }
     }
 
     /** null clears the override, reverting the slot to the shared SIZE setting. */
@@ -440,6 +490,34 @@ class LauncherPrefs(private val context: Context) {
 
     suspend fun setSnapMode(enabled: Boolean) {
         context.dataStore.edit { it[Keys.SNAP_MODE] = enabled }
+    }
+
+    suspend fun setFreeTilePlacement(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.FREE_TILE_PLACEMENT] = enabled }
+    }
+
+    suspend fun setTileSpacing(dp: Int) {
+        context.dataStore.edit { it[Keys.TILE_SPACING] = dp.coerceIn(0, 100) }
+    }
+
+    suspend fun setMarginTop(dp: Int) {
+        context.dataStore.edit { it[Keys.MARGIN_TOP] = dp.coerceIn(0, 200) }
+    }
+
+    suspend fun setMarginBottom(dp: Int) {
+        context.dataStore.edit { it[Keys.MARGIN_BOTTOM] = dp.coerceIn(0, 200) }
+    }
+
+    suspend fun setMarginStart(dp: Int) {
+        context.dataStore.edit { it[Keys.MARGIN_START] = dp.coerceIn(0, 200) }
+    }
+
+    suspend fun setMarginEnd(dp: Int) {
+        context.dataStore.edit { it[Keys.MARGIN_END] = dp.coerceIn(0, 200) }
+    }
+
+    suspend fun setHideEmptyTiles(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.HIDE_EMPTY_TILES] = enabled }
     }
 
     suspend fun setAlwaysShowGrid(enabled: Boolean) {

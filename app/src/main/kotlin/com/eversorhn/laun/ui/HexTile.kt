@@ -321,7 +321,11 @@ internal fun HexTile(
                     }
                 }
             }
-            if (!effectiveShowIcon && (app != null || isFolder)) {
+            // Below the SIZE slider's own floor (60dp — see TilePreviewCluster's fixed 40dp
+            // preview tiles), the tag's top-padding and the centered label's line-height both
+            // stop shrinking proportionally and start overlapping instead of just getting smaller
+            // — so it's dropped entirely rather than rendered illegibly.
+            if (!effectiveShowIcon && (app != null || isFolder) && tile.widthDp >= 60.dp) {
                 Text(
                     text = if (isFolder) "FOLDER" else hexTag(app!!.packageName),
                     color = LaunColors.dim,

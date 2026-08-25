@@ -4,6 +4,37 @@ Built forward. Tracked clearly. Newest first.
 
 ---
 
+## 0.7.0 — 2026-08-25
+
+- FREE TILE PLACEMENT is back as its own setting, alongside Free Position Mode and Snap Mode
+  rather than replacing anything: drag a tile onto any open grid cell beyond your current
+  COUNT — as much as still fits on screen at the current SIZE — and it pins there without
+  swapping or moving any other tile. The empty landing spots only show up as faint markers
+  while you're actually dragging.
+- SPACING: extra gap between tiles, independent of tile size.
+- MARGIN TOP / BOTTOM / LEFT / RIGHT: four independent screen-edge margins, replacing the old
+  fixed 32dp on every side.
+- HIDE EMPTY TILES: unassigned slots stay invisible until pressed, instead of always showing a
+  "+" placeholder — still tappable in place to assign an app. Any layout change (SIZE, COUNT,
+  SPACING, a MARGIN) briefly reveals them again so you can see what just changed.
+- SETTINGS MENU DELAY: the background long-press that opens the main Settings sheet now has its
+  own adjustable delay, matching the existing COLOR MENU DELAY for a tile's own menu.
+- Tapping a slider's own label (SIZE, COUNT, SPACING, any MARGIN, either menu delay) now
+  collapses Settings down to just that control, so the grid stays visible behind it while you
+  drag — previously only SIZE and COUNT had this.
+- A swipe up now always opens search, even if it started on a tile — previously an imprecise
+  swipe that grazed a tile opened that tile's own app picker instead.
+- Fixed: About Launcher's version was hardcoded and stuck at v0.3.0, three releases behind —
+  now reads it from the installed app itself.
+- Fixed: the small tile preview used by the Tile Reveal and Background Source pickers rendered
+  overlapping, illegible text at its fixed miniature size.
+- Fixed: with Hide Empty Tiles on, dragging toward an empty slot left it invisible, so you
+  couldn't see your own drop target.
+- Fixed: an app pinned via Free Tile Placement could fall outside the currently visible
+  capacity and get stuck excluded from every app picker with no tile showing it anywhere.
+- FAQ updated with swipe-to-search, renaming an app, and Snap Mode / Free Tile Placement's
+  effect on moving a tile.
+
 ## 0.6.0 — 2026-08-25
 
 - Choose an icon from any icon pack already installed on the phone (Delta, Redline, MBE Style, MaterialOS,
