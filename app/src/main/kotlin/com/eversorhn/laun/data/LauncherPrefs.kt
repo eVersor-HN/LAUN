@@ -55,20 +55,14 @@ data class LauncherSettings(
     val tileColors: Map<String, String> = emptyMap(),
     /** One or more packages per slot — one is a normal tile, more than one is a folder tile. */
     val slotApps: Map<Int, List<String>> = emptyMap(),
-    /** When on, manually dragging a tile can target any free cell anywhere on screen, and dropping
-     *  it beyond COUNT pins it there directly instead of growing COUNT to include everything closer
-     *  to center in between. Off by default — a small, cluster-adjacent set of drop targets is the
-     *  safer default so an imprecise drag can't jump COUNT far past what was intended. */
-    val freeTilePlacement: Boolean = false,
     /** Per-app display name overrides, set via long-press-to-rename in the app picker — the tile,
      *  the picker list, and folders all show this instead of the app's real label once set. */
     val customAppNames: Map<String, String> = emptyMap(),
     /** When on, dragging a tile drops it at the exact pixel position released — no snapping to the
      *  honeycomb grid, no inset from the screen edge. Tiles still can't be dropped close enough to
      *  overlap each other (see HexGrid's free-position collision resolution) — that's the one thing
-     *  that stays enforced even in this mode. Independent of [freeTilePlacement], which only
-     *  affects how far the hex-grid-based drag targets reach; this replaces that whole model
-     *  outright while on. */
+     *  that stays enforced even in this mode. Always among exactly the current COUNT tiles, same as
+     *  the normal honeycomb — this only changes how they're arranged, never how many there are. */
     val freePositionMode: Boolean = false,
     /** Explicit (x, y) in dp, top-left origin — only consulted while [freePositionMode] is on;
      *  a slot with no entry here still renders at its normal honeycomb position until dragged. */
@@ -134,7 +128,6 @@ class LauncherPrefs(private val context: Context) {
         val HAS_SHOWN_GESTURE_HINT = booleanPreferencesKey("has_shown_gesture_hint")
         val TILE_COLORS = stringSetPreferencesKey("tile_colors")
         val SLOT_APPS = stringSetPreferencesKey("slot_apps")
-        val FREE_TILE_PLACEMENT = booleanPreferencesKey("free_tile_placement")
         val CUSTOM_APP_NAMES = stringSetPreferencesKey("custom_app_names")
         val FREE_POSITION_MODE = booleanPreferencesKey("free_position_mode")
         val FREEFORM_POSITIONS = stringSetPreferencesKey("freeform_positions")
@@ -187,7 +180,6 @@ class LauncherPrefs(private val context: Context) {
                     if (i < 0) null else entry.substring(0, i).toIntOrNull()?.let { it to entry.substring(i + 1) }
                 }
                 .groupBy({ it.first }, { it.second }),
-            freeTilePlacement = prefs[Keys.FREE_TILE_PLACEMENT] ?: false,
             customAppNames = (prefs[Keys.CUSTOM_APP_NAMES] ?: emptySet())
                 .mapNotNull { entry ->
                     val i = entry.indexOf('|')
@@ -352,7 +344,6 @@ class LauncherPrefs(private val context: Context) {
             prefs[Keys.BACKGROUND_OPACITY] = d.backgroundOpacity
             prefs[Keys.BACKGROUND_INTENSITY] = d.backgroundIntensity
             prefs[Keys.BACKGROUND_EFFECT_SIZE] = d.backgroundEffectSize
-            prefs[Keys.FREE_TILE_PLACEMENT] = d.freeTilePlacement
             prefs[Keys.FREE_POSITION_MODE] = d.freePositionMode
             prefs[Keys.COLOR_MENU_AUTO_OPEN_SECONDS] = d.colorMenuAutoOpenSeconds
             prefs[Keys.ALWAYS_SHOW_GRID] = d.alwaysShowGrid
@@ -412,10 +403,6 @@ class LauncherPrefs(private val context: Context) {
             current += "$index|$x|$y"
             prefs[Keys.FREEFORM_POSITIONS] = current
         }
-    }
-
-    suspend fun setFreeTilePlacement(enabled: Boolean) {
-        context.dataStore.edit { it[Keys.FREE_TILE_PLACEMENT] = enabled }
     }
 
     /**

@@ -4,6 +4,20 @@ Built forward. Tracked clearly. Newest first.
 
 ---
 
+## 0.5.0 — 2026-08-25
+
+- COUNT is now a hard limit: exactly that many tiles are ever on screen, always. Dragging a tile
+  can no longer silently grow COUNT, and a tile can no longer stay pinned-but-hidden far off
+  beyond it — an app assigned to a slot beyond COUNT simply isn't shown until COUNT is raised or
+  the app is reassigned through the picker. FREE TILE PLACEMENT is removed as a setting since its
+  entire purpose (dropping beyond COUNT without growing it, or pinning it out of view) no longer
+  applies; FREE POSITION MODE stays, now always among exactly COUNT tiles.
+- Swipe up anywhere on the home screen (background, not a tile — open or closed) to search and
+  launch an app directly, without going through a tile first. Typing enough of a name for only
+  one app to still match launches it immediately on its own. The matched letters are highlighted
+  in the results list — in this new search and in the existing tile app picker. The list also
+  grows to use the freed space once the keyboard is dismissed.
+
 ## 0.4.0 — 2026-08-25
 
 - Free Position Mode: drop a tile anywhere on screen, no grid snapping and no edge

@@ -64,10 +64,6 @@ internal data class TileLayout(
 
 private data class LayoutResult(
     val tiles: List<TileLayout>,
-    /** Cells that fit at the current size but aren't part of the active [tiles] set — only
-     *  offered as drag-drop targets, never rendered/interactive otherwise. Dropping onto one
-     *  expands the grid to include it (see LauncherScreen's onReorderSlots handling). */
-    val extraCells: List<TileLayout>,
     val shrunk: Boolean
 )
 
@@ -75,6 +71,10 @@ private const val LAYOUT_MARGIN_DP = 32f
 private const val TILE_RENDER_SCALE = 0.9f
 private const val TOP_DEAD_ZONE_DP = 24f
 private const val DRAG_SLOP_DP = 12f
+/** How far a background press has to travel straight up before release counts as "swipe up to
+ *  search" instead of a tap/long-press — deliberately more than a flick so it can't be triggered
+ *  by accident while just opening the grid. */
+private const val SWIPE_UP_THRESHOLD_DP = 72f
 
 /**
  * True point-in-hexagon test against the tile's actual rendered (scaled) shape — not its
@@ -153,15 +153,6 @@ fun HexGrid(
     revealAnimation: Int,
     animationSpeed: Int,
     isOpen: Boolean,
-    /** Slots beyond [slots]' own size that were manually pinned somewhere else on the screen via
-     *  free placement (see [freePlacement]) — rendered at their fixed screen position same as any
-     *  other tile, without pulling COUNT up to include everything closer to center in between. */
-    extraOccupiedSlots: Map<Int, List<AppInfo>> = emptyMap(),
-    /** When on, dragging a tile can target any free cell anywhere on screen, and dropping onto one
-     *  beyond COUNT pins it there directly (via [extraOccupiedSlots]) instead of growing COUNT and
-     *  pulling every closer-to-center cell along with it. Off by default: only cells touching the
-     *  active cluster are offered, so an imprecise drag can't jump COUNT far past what was intended. */
-    freePlacement: Boolean = false,
     /** When on, a drag drops the tile at the exact pixel released — no grid snapping, no edge
      *  margin — instead of resolving through [onReorderSlots] at all. Tiles still can't end up
      *  close enough to overlap (see [resolveFreePosition]), which is the one constraint kept. */
@@ -182,6 +173,9 @@ fun HexGrid(
     onCloseBackground: () -> Unit,
     onLongPressSlot: (List<AppInfo>, Int, Offset) -> Unit,
     onLongPressBackground: () -> Unit,
+    /** A background press (open or closed stage) that travels straight up past
+     *  [SWIPE_UP_THRESHOLD_DP] before release — anywhere on screen, not tied to a tile. */
+    onSwipeUpBackground: () -> Unit = {},
     onTapEmptySlot: (Int) -> Unit,
     onLaunch: (AppInfo) -> Unit,
     onOpenFolder: (Int, List<AppInfo>) -> Unit,
@@ -199,7 +193,7 @@ fun HexGrid(
         val boxHDp = maxHeight.value
         val n = slots.size
 
-        val layoutResult = remember(slots, hexSizeDp, availWDp, availHDp, extraOccupiedSlots, freePlacement, freePositionMode, freeformPositions, boxWDp, boxHDp, tileSizeOverrides) {
+        val layoutResult = remember(slots, hexSizeDp, availWDp, availHDp, freePositionMode, freeformPositions, boxWDp, boxHDp, tileSizeOverrides) {
             // Fill the actual screen rectangle (both width and height), not just a fixed
             // symmetric hex-of-hexes outline: find how many cols/rows fit at the requested tile
             // size, only shrinking the size if even a 1x1 grid wouldn't fit n tiles.
@@ -263,37 +257,12 @@ fun HexGrid(
                     delayMs = ((maxDist - dist) / maxDist * 350f).toInt()
                 )
             }
-            // Manually pinned tiles (free placement) — rendered at their own fixed screen position
-            // beyond COUNT, without pulling every closer-to-center cell in between into view too.
-            // With both free placement and free position mode off, a pinned tile only keeps
-            // showing while it's still touching the active cluster (same adjacencyDist rule as
-            // extraCells below) — otherwise shrinking COUNT after a pin (or after COUNT used to be
-            // bigger) left old high-index occupied slots scattered across the whole screen forever
-            // instead of hiding like any other slot beyond COUNT always has. With either mode on,
-            // everything you've placed stays visible regardless of distance — that's the point.
-            val adjacencyDist = hexW * 1.05f
-            fun touchesCluster(dx: Float, dy: Float) = ranked.any { (_, adx, ady) ->
-                val ddx = dx - adx; val ddy = dy - ady
-                ddx * ddx + ddy * ddy <= adjacencyDist * adjacencyDist
-            }
-            val pinnedIndices = extraOccupiedSlots.keys
-                .filter { it >= ranked.size && it < rankedAll.size }
-                .filter { idx -> freePlacement || freePositionMode || touchesCluster(rankedAll[idx].second, rankedAll[idx].third) }
-                .toSet()
-            val pinnedTiles = pinnedIndices.mapNotNull { idx ->
-                val apps = extraOccupiedSlots[idx] ?: return@mapNotNull null
-                val (_, dx, dy) = rankedAll[idx]
-                TileLayout(
-                    apps = apps,
-                    index = idx,
-                    centerXDp = offsetX + dx,
-                    centerYDp = offsetY + dy,
-                    widthDp = hexW.dp,
-                    heightDp = hexH.dp,
-                    delayMs = 0
-                )
-            }
-            val positionedTiles = rankedTiles + pinnedTiles
+            // Exactly the current COUNT worth of tiles, always — no tile beyond it is ever
+            // rendered, pinned, or otherwise kept visible, so COUNT is the one source of truth for
+            // how many tiles are on screen. An app sitting in a slot index beyond COUNT (e.g. left
+            // over after COUNT was lowered) simply isn't shown until COUNT is raised again or the
+            // app is reassigned to a slot within range via the app picker.
+            val positionedTiles = rankedTiles
             // Explicit freeform positions override the honeycomb slot entirely while the mode is
             // on — a tile the user hasn't dragged yet still falls back to its normal position, so
             // switching the mode on doesn't scatter everything to (0,0) first.
@@ -318,41 +287,7 @@ fun HexGrid(
                 tile.copy(widthDp = tile.widthDp * scale, heightDp = tile.heightDp * scale)
             }
 
-            // Cells beyond n that still fit at this size, minus any already-pinned ones — only
-            // surfaced as drag targets, so a dragged tile can be pushed onto genuinely free room,
-            // not only onto one of the n slots already in play. With free placement off, restricted
-            // to cells touching the active cluster (adjacent hex centers are exactly hexW apart) —
-            // rankedAll otherwise contains every cell that fits anywhere on the whole screen at this
-            // tile size, which used to surface (invisible until mid-drag) drop targets far from the
-            // cluster; dropping onto one of those jumped COUNT straight up to that cell's rank index.
-            // With free placement on, the user explicitly wants every free cell available, and
-            // dropping onto one pins it there instead of touching COUNT — see LauncherScreen's
-            // onReorderSlots handling.
-            val extraCells = (ranked.size until rankedAll.size)
-                .filterNot { it in pinnedIndices }
-                .filter { idx ->
-                    freePlacement || run {
-                        val (_, dx, dy) = rankedAll[idx]
-                        touchesCluster(dx, dy) || pinnedTiles.any { pt ->
-                            val ddx = dx - (pt.centerXDp - offsetX); val ddy = dy - (pt.centerYDp - offsetY)
-                            ddx * ddx + ddy * ddy <= adjacencyDist * adjacencyDist
-                        }
-                    }
-                }
-                .map { idx ->
-                    val (_, dx, dy) = rankedAll[idx]
-                    TileLayout(
-                        apps = emptyList(),
-                        index = idx,
-                        centerXDp = offsetX + dx,
-                        centerYDp = offsetY + dy,
-                        widthDp = hexW.dp,
-                        heightDp = hexH.dp,
-                        delayMs = 0
-                    )
-                }
-
-            LayoutResult(sizedTileList, extraCells, shrunk = hexW < hexSizeDp.toFloat() - 0.5f)
+            LayoutResult(sizedTileList, shrunk = hexW < hexSizeDp.toFloat() - 0.5f)
         }
         // In free position mode tiles can visually overlap (spacing is push-apart, not exact),
         // and draw order = hit-test priority order (see hitTile below). Without this, an empty
@@ -368,9 +303,6 @@ fun HexGrid(
         val density = LocalDensity.current
         fun hitTile(point: Offset): Int? =
             tiles.lastOrNull { hexContains(point, it, density) }?.index
-        // Drag targets also consider the not-yet-active cells — see [LayoutResult.extraCells].
-        fun hitDragTarget(point: Offset): Int? =
-            hitTile(point) ?: layoutResult.extraCells.lastOrNull { hexContains(point, it, density) }?.index
 
         var activeSlot by remember { mutableStateOf<Int?>(null) }
         var pressActive by remember { mutableStateOf(false) }
@@ -436,12 +368,11 @@ fun HexGrid(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                // freePlacement/freePositionMode are included even though they never change tiles'
-                // own content by themselves — onReorderSlots (captured below) branches on them at
-                // the call site in LauncherScreen, and pointerInput only gets a fresh closure (with
-                // that decision's current value) when one of its keys actually changes, not on
-                // every recomposition.
-                .pointerInput(tiles, isOpen, freePlacement, freePositionMode) {
+                // freePositionMode is included even though it never changes tiles' own content by
+                // itself — the drag-release branch below reads it directly, and pointerInput only
+                // gets a fresh closure (with that decision's current value) when one of its keys
+                // actually changes, not on every recomposition.
+                .pointerInput(tiles, isOpen, freePositionMode) {
                     val topDeadZonePx = with(density) { TOP_DEAD_ZONE_DP.dp.toPx() }
                     val dragSlopPx = with(density) { DRAG_SLOP_DP.dp.toPx() }
                     awaitEachGesture {
@@ -458,20 +389,31 @@ fun HexGrid(
                         if (!isOpen) {
                             // closed stage: a quick tap reveals the grid; holding past the
                             // long-press threshold opens Settings directly (fired by the
-                            // LaunchedEffect above, while still held) — there's no separate
-                            // "search" gesture anymore, long-press on any non-tile area (open or
-                            // closed) always reaches Settings the same way.
+                            // LaunchedEffect above, while still held); swiping straight up opens
+                            // search instead — long-press on any non-tile area (open or closed)
+                            // always reaches Settings, and swipe-up always reaches search, the
+                            // same way regardless of stage.
                             pressActive = true
                             longPressArmed = false
                             activeSlot = null
                             pressStartedOnBackground = true
+                            val swipeStartPos = down.position
+                            var lastPos = down.position
                             try {
                                 while (true) {
                                     val event = awaitPointerEvent()
                                     val change = event.changes.firstOrNull() ?: break
+                                    lastPos = change.position
                                     if (change.changedToUp()) break
                                 }
-                                if (!longPressArmed) onOpen()
+                                val upDist = swipeStartPos.y - lastPos.y
+                                val sideDist = abs(lastPos.x - swipeStartPos.x)
+                                val swipeUpThresholdPx = with(density) { SWIPE_UP_THRESHOLD_DP.dp.toPx() }
+                                when {
+                                    longPressArmed -> {}
+                                    upDist > swipeUpThresholdPx && upDist > sideDist -> onSwipeUpBackground()
+                                    else -> onOpen()
+                                }
                             } finally {
                                 pressActive = false
                             }
@@ -524,7 +466,7 @@ fun HexGrid(
                                     dragOffsetPx = Offset(change.position.x - downPos.x, change.position.y - downPos.y)
                                     // Free-position mode has no discrete drop targets — the tile
                                     // just follows the finger and lands wherever it's released.
-                                    if (!freePositionMode) dragTargetSlot = hitDragTarget(change.position)
+                                    if (!freePositionMode) dragTargetSlot = hitTile(change.position)
                                 }
 
                                 if (change.changedToUp()) break
@@ -566,7 +508,12 @@ fun HexGrid(
                             } else if (!isDragging && !longPressArmed) {
                                 val slot = activeSlot
                                 val slotApps = tiles.firstOrNull { it.index == slot }?.apps.orEmpty()
+                                val upDist = downPos.y - lastPointerPos.y
+                                val sideDist = abs(lastPointerPos.x - downPos.x)
+                                val swipeUpThresholdPx = with(density) { SWIPE_UP_THRESHOLD_DP.dp.toPx() }
                                 when {
+                                    slot == null && pressStartedOnBackground &&
+                                        upDist > swipeUpThresholdPx && upDist > sideDist -> onSwipeUpBackground()
                                     slotApps.size == 1 -> onLaunch(slotApps[0])
                                     slotApps.size > 1 -> onOpenFolder(slot!!, slotApps)
                                     slot != null -> onTapEmptySlot(slot)
@@ -607,23 +554,6 @@ fun HexGrid(
                 )
             }
 
-            // Only shown while actively dragging — faint outlines marking every spot that still
-            // has room at the current tile size, even ones with no slot in play yet. Brightens on
-            // whichever one the dragged tile is currently over, same as the highlight a real slot
-            // gets, so it reads as a valid drop target rather than empty decoration.
-            if (isDragging && !freePositionMode) {
-                layoutResult.extraCells.forEach { ghost ->
-                    val hovered = ghost.index == dragTargetSlot
-                    Box(
-                        modifier = Modifier
-                            .offset(ghost.centerXDp.dp - ghost.widthDp / 2, ghost.centerYDp.dp - ghost.heightDp / 2)
-                            .size(width = ghost.widthDp, height = ghost.heightDp)
-                            .clip(HexShape)
-                            .border(1.dp, if (hovered) LaunColors.fg else LaunColors.border)
-                            .alpha(if (hovered) 0.9f else 0.35f)
-                    )
-                }
-            }
         }
     }
 }

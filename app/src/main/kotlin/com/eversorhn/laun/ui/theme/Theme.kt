@@ -19,6 +19,8 @@ object LaunColors {
     val dim2 = Color(0xFF3A3A3A)
     val accent = Color(0xFFFFFFFF)
     val border = Color(0xFF2A2A2A)
+    /** Search-query match highlight — same red as the color popover's palette. */
+    val searchMatch = Color(0xFFFF2D3C)
 }
 
 /** Same 20-color palette as the color-popover in demo.html, for the long-press tile picker. */

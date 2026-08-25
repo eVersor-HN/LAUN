@@ -30,7 +30,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -165,7 +169,7 @@ fun AppPickerSheet(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = app.label,
+                                text = highlightedLabel(app.label, query),
                                 color = if (isSelected) LaunColors.fg else LaunColors.dim,
                                 fontFamily = HeadFontFamily,
                                 fontSize = 13.sp
@@ -277,5 +281,20 @@ fun AppPickerSheet(
                 }
             }
         }
+    }
+}
+
+/** Highlights the first case-insensitive occurrence of [query] inside [label] in the search-match
+ *  red — shared with [AppLaunchSearchSheet]'s result list. */
+internal fun highlightedLabel(label: String, query: String): AnnotatedString {
+    if (query.isBlank()) return AnnotatedString(label)
+    val idx = label.indexOf(query, ignoreCase = true)
+    if (idx < 0) return AnnotatedString(label)
+    return buildAnnotatedString {
+        append(label.substring(0, idx))
+        withStyle(SpanStyle(color = LaunColors.searchMatch)) {
+            append(label.substring(idx, idx + query.length))
+        }
+        append(label.substring(idx + query.length))
     }
 }

@@ -69,8 +69,6 @@ fun SettingsSheet(
     hexCount: Int,
     onHexCountChange: (Int) -> Unit,
     didShrinkToFit: Boolean,
-    freeTilePlacement: Boolean,
-    onFreeTilePlacementChange: (Boolean) -> Unit,
     freePositionMode: Boolean,
     onFreePositionModeChange: (Boolean) -> Unit,
     colorMenuAutoOpenSeconds: Int,
@@ -258,30 +256,13 @@ fun SettingsSheet(
             // that reads as "the grid's own look," and gesture timing/reach isn't that.
             SectionHeader(title = "TILE INTERACTION")
             ToggleRow(
-                label = "FREE TILE PLACEMENT",
-                checked = freeTilePlacement,
-                onCheckedChange = onFreeTilePlacementChange,
-            )
-            if (freeTilePlacement) {
-                Text(
-                    text = "DRAG A TILE ANYWHERE ON SCREEN — DROPPING BEYOND COUNT PINS IT THERE INSTEAD OF GROWING COUNT",
-                    color = LaunColors.dim,
-                    fontFamily = MonoFontFamily,
-                    fontSize = 9.sp,
-                    letterSpacing = 0.6.sp,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
-                )
-            }
-
-            ToggleRow(
                 label = "FREE POSITION MODE",
                 checked = freePositionMode,
                 onCheckedChange = onFreePositionModeChange,
-                modifier = Modifier.padding(top = 4.dp)
             )
             if (freePositionMode) {
                 Text(
-                    text = "DROP A TILE ANYWHERE — NO GRID, NO EDGE MARGIN. TILES STILL WON'T OVERLAP EACH OTHER. TAKES OVER FROM FREE TILE PLACEMENT ABOVE WHILE ON",
+                    text = "DROP A TILE ANYWHERE — NO GRID, NO EDGE MARGIN. TILES STILL WON'T OVERLAP EACH OTHER OR EXCEED COUNT",
                     color = LaunColors.dim,
                     fontFamily = MonoFontFamily,
                     fontSize = 9.sp,

@@ -147,6 +147,7 @@ fun LauncherScreen(
     var colorPickerApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
     var colorPickerAnchor by remember { mutableStateOf(Offset.Zero) }
     var appPickerSlot by remember { mutableStateOf<Int?>(null) }
+    var showAppSearch by remember { mutableStateOf(false) }
     var folderSlot by remember { mutableStateOf<Int?>(null) }
     var showAbout by remember { mutableStateOf(false) }
     var showFaq by remember { mutableStateOf(false) }
@@ -233,18 +234,6 @@ fun LauncherScreen(
     val appsByPackage = remember(apps) { apps.associateBy { it.packageName } }
     val slots = remember(appsByPackage, settings.slotApps, liveHexCount) {
         (0 until liveHexCount).map { i -> (settings.slotApps[i] ?: emptyList()).mapNotNull { appsByPackage[it] } }
-    }
-    // Slots beyond liveHexCount that were manually pinned somewhere on screen via free placement —
-    // rendered at their own fixed position without pulling COUNT (and every closer-to-center cell
-    // along with it) up to include them. See HexGrid's freePlacement/extraOccupiedSlots.
-    val pinnedSlots = remember(appsByPackage, settings.slotApps, liveHexCount) {
-        settings.slotApps
-            .filterKeys { it >= liveHexCount }
-            .mapNotNull { (i, pkgs) ->
-                val resolved = pkgs.mapNotNull { appsByPackage[it] }
-                if (resolved.isEmpty()) null else i to resolved
-            }
-            .toMap()
     }
     val freeformPositions = remember(settings.freeformPositions) {
         settings.freeformPositions.mapValues { (_, xy) -> Offset(xy.first, xy.second) }
@@ -334,8 +323,6 @@ fun LauncherScreen(
             revealAnimation = settings.revealAnimation,
             animationSpeed = settings.animationSpeed,
             isOpen = isOpen,
-            extraOccupiedSlots = pinnedSlots,
-            freePlacement = settings.freeTilePlacement,
             freePositionMode = settings.freePositionMode,
             freeformPositions = freeformPositions,
             onFreeformPositionChange = { index, pos -> scope.launch { prefs.setFreeformPosition(index, pos.x, pos.y) } },
@@ -349,6 +336,7 @@ fun LauncherScreen(
                 colorPickerAnchor = pos
             },
             onLongPressBackground = { showSettings = true },
+            onSwipeUpBackground = { showAppSearch = true },
             onTapEmptySlot = { slotIndex -> appPickerSlot = slotIndex },
             onLaunch = { app ->
                 // Collapse before leaving, not after coming back — otherwise returning via the
@@ -361,14 +349,9 @@ fun LauncherScreen(
             onReorderSlots = { from, to ->
                 val fromApps = settings.slotApps[from] ?: emptyList()
                 val toApps = settings.slotApps[to] ?: emptyList()
-                // Dropping onto a spot beyond the current count (one of HexGrid's "fits but not
-                // active yet" cells) either pins it there directly (free placement) or grows the
-                // grid to include it, same as dragging the COUNT slider up by hand — either way the
-                // tile just landed exactly where the user put it.
-                if (to >= liveHexCount && !settings.freeTilePlacement) {
-                    liveHexCount = to + 1
-                    scope.launch { prefs.setHexCount(to + 1) }
-                }
+                // Both from and to are always within the current COUNT-sized visible grid (HexGrid
+                // never offers a drag target beyond it) — a move is always a pure swap, and COUNT
+                // never changes as a side effect of dragging.
                 scope.launch {
                     prefs.setSlotApps(from, toApps)
                     prefs.setSlotApps(to, fromApps)
@@ -434,13 +417,12 @@ fun LauncherScreen(
     appPickerSlot?.let { slot ->
         // The pool excludes apps assigned to OTHER *visible* slots, but keeps this slot's own apps
         // in so they show up pre-checked (and can be unchecked) instead of vanishing from the list.
-        // A slot beyond COUNT only renders while free placement or free position mode is on (see
-        // HexGrid's own visibility rule) — with both off, its app would otherwise stay excluded
-        // here forever even though the tile holding it isn't shown anywhere, effectively losing it.
-        val showsHiddenPins = settings.freeTilePlacement || settings.freePositionMode
-        val assignedElsewhere = remember(settings.slotApps, slot, liveHexCount, showsHiddenPins) {
+        // A slot beyond COUNT is never rendered (see HexGrid), so an app sitting only in one is
+        // free to pick again here — picking it moves it into this slot (setSlotApps strips it out
+        // of its old one), rather than leaving it stuck excluded forever with nothing showing it.
+        val assignedElsewhere = remember(settings.slotApps, slot, liveHexCount) {
             settings.slotApps
-                .filterKeys { it != slot && (it < liveHexCount || showsHiddenPins) }
+                .filterKeys { it != slot && it < liveHexCount }
                 .values.flatten().toSet()
         }
         val pickerPool = remember(apps, assignedElsewhere) { apps.filterNot { it.packageName in assignedElsewhere } }
@@ -455,6 +437,18 @@ fun LauncherScreen(
             },
             onRenameApp = { packageName, name -> scope.launch { prefs.setCustomAppName(packageName, name) } },
             onDismiss = { appPickerSlot = null }
+        )
+    }
+
+    if (showAppSearch) {
+        AppLaunchSearchSheet(
+            apps = apps,
+            immersiveEnabled = settings.immersiveEnabled,
+            onLaunch = { app ->
+                showAppSearch = false
+                repository.launch(app.packageName)
+            },
+            onDismiss = { showAppSearch = false }
         )
     }
 
@@ -474,8 +468,6 @@ fun LauncherScreen(
             hexCount = liveHexCount,
             onHexCountChange = { liveHexCount = it; scope.launch { prefs.setHexCount(it) } },
             didShrinkToFit = didShrinkToFit,
-            freeTilePlacement = settings.freeTilePlacement,
-            onFreeTilePlacementChange = { scope.launch { prefs.setFreeTilePlacement(it) } },
             freePositionMode = settings.freePositionMode,
             onFreePositionModeChange = { scope.launch { prefs.setFreePositionMode(it) } },
             colorMenuAutoOpenSeconds = settings.colorMenuAutoOpenSeconds,
