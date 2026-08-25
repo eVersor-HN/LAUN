@@ -5,8 +5,10 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import com.eversorhn.laun.R
 
 /** Style 07 — Ink / White. Pure monochrome, a single accent (white). See demo.html :root. */
 object LaunColors {
@@ -25,8 +27,14 @@ val TILE_COLOR_PALETTE = listOf(
     0xFFFF6B35, 0xFFA855F7, 0xFF84CC16, 0xFFF43F5E, 0xFF6366F1, 0xFFFACC15, 0xFFFB7185, 0xFFC026D3, 0xFF34D399, 0xFF64748B
 ).map { Color(it) }
 
-val HeadFontFamily = FontFamily.SansSerif
-val MonoFontFamily = FontFamily.Monospace
+/** Same faces as the demo.html prototype (Chakra Petch / JetBrains Mono), bundled under res/font. */
+val HeadFontFamily = FontFamily(
+    Font(R.font.chakra_petch_regular, FontWeight.Normal),
+    Font(R.font.chakra_petch_semibold, FontWeight.SemiBold)
+)
+val MonoFontFamily = FontFamily(
+    Font(R.font.jetbrains_mono_regular, FontWeight.Normal)
+)
 
 val TileNameStyle = TextStyle(
     fontFamily = HeadFontFamily,

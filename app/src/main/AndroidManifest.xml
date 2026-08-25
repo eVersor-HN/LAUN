@@ -2,6 +2,19 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- WallpaperManager.getDrawable() needs BOTH of these on this device/OS combo — confirmed
+         on-device: READ_EXTERNAL_STORAGE alone passes WallpaperManager's own explicit permission
+         check but then fails a second, separate AppOps-level check that specifically wants the
+         READ_MEDIA_IMAGES op allowed; READ_MEDIA_IMAGES alone fails the first check. Neither one
+         is documented as sufficient on its own for a launcher app. maxSdkVersion is deliberately
+         omitted from READ_EXTERNAL_STORAGE: capping it at 32 makes the permission unavailable to
+         request at all on newer OS versions, where WallpaperManager still demands it regardless. -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <!-- For the optional Bluetooth status indicator — BLUETOOTH_CONNECT is the modern runtime
+         permission (API 31+); plain BLUETOOTH covers the older, install-time-only behavior. -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
     <!-- Without this, Android 11+ package visibility hides most apps from queryIntentActivities. -->
     <queries>

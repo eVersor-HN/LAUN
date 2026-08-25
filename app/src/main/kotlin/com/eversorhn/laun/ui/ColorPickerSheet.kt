@@ -1,5 +1,8 @@
 package com.eversorhn.laun.ui
 
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,12 +20,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
+import com.eversorhn.laun.data.AppInfo
 import com.eversorhn.laun.ui.theme.LaunColors
 import com.eversorhn.laun.ui.theme.MonoFontFamily
 import com.eversorhn.laun.ui.theme.TILE_COLOR_PALETTE
@@ -35,11 +40,15 @@ import com.eversorhn.laun.ui.theme.TILE_COLOR_PALETTE
 @Composable
 fun ColorPickerSheet(
     anchor: Offset,
+    slotApps: List<AppInfo>,
     onPick: (String) -> Unit,
     onReset: () -> Unit,
+    onEditApps: () -> Unit,
     onClearTile: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
+    val singleApp = slotApps.singleOrNull()
     Popup(
         popupPositionProvider = object : PopupPositionProvider {
             override fun calculatePosition(
@@ -57,7 +66,12 @@ fun ColorPickerSheet(
                 return IntOffset(x, y)
             }
         },
-        onDismissRequest = onDismiss
+        onDismissRequest = onDismiss,
+        // Default Popup isn't focusable, so it never intercepts the system back button — a back
+        // press would instead fall through to the grid's own BackHandler and close the grid while
+        // leaving this popover stranded on screen. focusable = true makes it own back-press
+        // dismissal like every other sheet in the app (all of which are Dialogs, focusable by default).
+        properties = androidx.compose.ui.window.PopupProperties(focusable = true)
     ) {
         Column(
             modifier = Modifier
@@ -67,7 +81,7 @@ fun ColorPickerSheet(
                 .padding(12.dp)
         ) {
             Text(
-                text = "KACHELFARBE WÄHLEN",
+                text = "CHOOSE TILE COLOR",
                 color = LaunColors.dim,
                 fontFamily = MonoFontFamily,
                 fontSize = 9.5.sp,
@@ -83,38 +97,42 @@ fun ColorPickerSheet(
                     ColorSwatch(color) { onPick(color.toHex()) }
                 }
             }
-            Text(
-                text = "FARBE ZURÜCKSETZEN",
-                color = LaunColors.dim,
-                fontFamily = MonoFontFamily,
-                fontSize = 9.5.sp,
-                letterSpacing = 1.sp,
-                fontWeight = FontWeight.Normal,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp)
-                    .border(1.dp, LaunColors.border)
-                    .clickable { onReset() }
-                    .padding(vertical = 6.dp),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-            )
-            Text(
-                text = "KACHEL LEEREN",
-                color = LaunColors.dim,
-                fontFamily = MonoFontFamily,
-                fontSize = 9.5.sp,
-                letterSpacing = 1.sp,
-                fontWeight = FontWeight.Normal,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 6.dp)
-                    .border(1.dp, LaunColors.border)
-                    .clickable { onClearTile() }
-                    .padding(vertical = 6.dp),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-            )
+            ActionRow(text = "RESET COLOR", onClick = onReset)
+            if (singleApp != null) {
+                ActionRow(text = "APP INFO", onClick = {
+                    context.startActivity(
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", singleApp.packageName, null))
+                    )
+                    onDismiss()
+                })
+                ActionRow(text = "UNINSTALL", onClick = {
+                    context.startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:${singleApp.packageName}")))
+                    onDismiss()
+                })
+            }
+            ActionRow(text = "EDIT APPS", onClick = onEditApps)
+            ActionRow(text = if (singleApp != null) "CLEAR TILE" else "CLEAR FOLDER", onClick = onClearTile)
         }
     }
+}
+
+@Composable
+private fun ActionRow(text: String, onClick: () -> Unit) {
+    Text(
+        text = text,
+        color = LaunColors.dim,
+        fontFamily = MonoFontFamily,
+        fontSize = 9.5.sp,
+        letterSpacing = 1.sp,
+        fontWeight = FontWeight.Normal,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 6.dp)
+            .border(1.dp, LaunColors.border)
+            .clickable(onClick = onClick)
+            .padding(vertical = 6.dp),
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+    )
 }
 
 @Composable

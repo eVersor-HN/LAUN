@@ -1,51 +1,71 @@
 package com.eversorhn.laun.ui
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.input.pointer.changedToUp
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.eversorhn.laun.data.RING_COUNTS
+import com.eversorhn.laun.data.AppInfo
+import com.eversorhn.laun.data.BACKGROUND_ANIMATIONS
+import com.eversorhn.laun.data.MAX_HEX_COUNT
 import com.eversorhn.laun.data.REVEAL_ANIMATIONS
 import com.eversorhn.laun.ui.theme.LaunColors
 import com.eversorhn.laun.ui.theme.MonoFontFamily
+import kotlin.math.roundToInt
+
+/** Picker previews always animate at this speed, independent of the live ANIMATION SPEED
+ *  setting — otherwise a fast/instant configured speed would make the preview impossible to see. */
+private const val PREVIEW_ANIMATION_SPEED = 40
 
 /**
- * Settings panel — direct port of demo.html's bottom-left panel: tile size, symmetric tile count
- * (snapped to the ring totals so the honeycomb is always a complete, symmetric shape), HUD and
- * immersive-mode toggles.
+ * Settings panel — direct port of demo.html's bottom-left panel: tile size/count, HUD and
+ * immersive-mode toggles. Sections read top-to-bottom in roughly the order things are drawn:
+ * the grid's own look (GRID), how tiles reveal (ANIMATION), what's behind them (BACKGROUND),
+ * the overlay on top of everything (STATUS BAR), then app-level meta (SYSTEM).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsSheet(
     hexSizeDp: Int,
     onHexSizeChange: (Int) -> Unit,
-    hexCountIndex: Int,
-    onHexCountIndexChange: (Int) -> Unit,
+    hexCount: Int,
+    onHexCountChange: (Int) -> Unit,
     didShrinkToFit: Boolean,
     hudVisible: Boolean,
     onHudVisibleChange: (Boolean) -> Unit,
@@ -53,37 +73,85 @@ fun SettingsSheet(
     onHudShowStatusChange: (Boolean) -> Unit,
     hudShowClock: Boolean,
     onHudShowClockChange: (Boolean) -> Unit,
+    hudShowClockMillis: Boolean,
+    onHudShowClockMillisChange: (Boolean) -> Unit,
     hudShowBattery: Boolean,
     onHudShowBatteryChange: (Boolean) -> Unit,
+    hudShowBatteryPercent: Boolean,
+    onHudShowBatteryPercentChange: (Boolean) -> Unit,
     hudShowSignal: Boolean,
     onHudShowSignalChange: (Boolean) -> Unit,
-    hudShowAppCount: Boolean,
-    onHudShowAppCountChange: (Boolean) -> Unit,
+    hudShowWifi: Boolean,
+    onHudShowWifiChange: (Boolean) -> Unit,
+    hudShowBluetooth: Boolean,
+    onHudShowBluetoothChange: (Boolean) -> Unit,
     hudShowCursor: Boolean,
     onHudShowCursorChange: (Boolean) -> Unit,
     immersiveEnabled: Boolean,
     onImmersiveEnabledChange: (Boolean) -> Unit,
     showAppIcons: Boolean,
     onShowAppIconsChange: (Boolean) -> Unit,
+    iconSizePercent: Int,
+    onIconSizePercentChange: (Int) -> Unit,
     revealAnimation: Int,
     onRevealAnimationChange: (Int) -> Unit,
+    animationSpeed: Int,
+    onAnimationSpeedChange: (Int) -> Unit,
+    showWallpaper: Boolean,
+    onShowWallpaperChange: (Boolean) -> Unit,
+    backgroundAnimation: Int,
+    onBackgroundAnimationChange: (Int) -> Unit,
+    backgroundOpacity: Int,
+    onBackgroundOpacityChange: (Int) -> Unit,
+    slots: List<List<AppInfo>>,
+    tileColors: Map<String, String>,
+    wallpaperBitmap: ImageBitmap?,
+    onFaqClick: () -> Unit,
+    onAboutClick: () -> Unit,
+    onResetClick: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    // Tapping GRÖSSE/ANZAHL's label switches to a solo view showing just that one slider —
+    // Tapping SIZE/COUNT's label switches to a solo view showing just that one slider —
     // the sheet then has almost no content, so it renders as a small bar instead of covering
     // most of the screen, and the grid stays visible above while dragging.
     var soloControl by remember { mutableStateOf<String?>(null) }
 
+    var showAnimationPicker by remember { mutableStateOf(false) }
+    var showBackgroundPicker by remember { mutableStateOf(false) }
+    // Toggling this replays the picker preview's reveal animation on demand (tapping an option,
+    // or tapping the preview itself) instead of it only ever playing once on open.
+    var previewOpen by remember { mutableStateOf(true) }
+    var previewNonce by remember { mutableStateOf(0) }
+    fun replayPreview() { previewOpen = false; previewNonce++ }
+    androidx.compose.runtime.LaunchedEffect(previewNonce) {
+        if (previewNonce > 0) {
+            kotlinx.coroutines.delay(40)
+            previewOpen = true
+        }
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(),
+        shape = androidx.compose.ui.graphics.RectangleShape,
         containerColor = LaunColors.bg2,
-        contentColor = LaunColors.fg
+        contentColor = LaunColors.fg,
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .padding(top = 10.dp, bottom = 6.dp)
+                    .width(28.dp)
+                    .height(2.dp)
+                    .background(LaunColors.border)
+            )
+        }
     ) {
+        HideSystemBarsWhileShown(immersiveEnabled)
+
         if (soloControl != null) {
             Column(modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
                 Text(
-                    text = "← ZURÜCK",
+                    text = "← BACK",
                     color = LaunColors.dim,
                     fontFamily = MonoFontFamily,
                     fontSize = 10.sp,
@@ -93,28 +161,25 @@ fun SettingsSheet(
                         .clickable { soloControl = null }
                 )
                 if (soloControl == "size") {
-                    SettingRow(label = "GRÖSSE", value = "${hexSizeDp}dp") {
-                        Slider(
+                    SettingRow(label = "SIZE", value = "${hexSizeDp}dp") {
+                        CorpoSlider(
                             value = hexSizeDp.toFloat(),
                             onValueChange = { onHexSizeChange(it.toInt()) },
                             valueRange = 60f..170f,
-                            colors = sliderColors()
                         )
                     }
                 } else {
-                    SettingRow(label = "ANZAHL", value = "${RING_COUNTS[hexCountIndex]}") {
-                        Slider(
-                            value = hexCountIndex.toFloat(),
-                            onValueChange = { onHexCountIndexChange(it.toInt()) },
-                            valueRange = 0f..(RING_COUNTS.size - 1).toFloat(),
-                            steps = RING_COUNTS.size - 2,
-                            colors = sliderColors()
+                    SettingRow(label = "COUNT", value = "$hexCount") {
+                        CorpoSlider(
+                            value = hexCount.toFloat(),
+                            onValueChange = { onHexCountChange(it.toInt()) },
+                            valueRange = 1f..MAX_HEX_COUNT.toFloat(),
                         )
                     }
                 }
                 if (didShrinkToFit) {
                     Text(
-                        text = "PASST NICHT AUF DEN SCREEN — GRÖSSE AUTOMATISCH VERKLEINERT",
+                        text = "DOESN'T FIT THE SCREEN — SIZE AUTO-SHRUNK",
                         color = LaunColors.dim,
                         fontFamily = MonoFontFamily,
                         fontSize = 9.sp,
@@ -132,36 +197,38 @@ fun SettingsSheet(
                 .padding(bottom = 24.dp)
                 .verticalScroll(rememberScrollState())
         ) {
+            SectionHeader(title = "GRID", topPadding = 0.dp)
+
             SettingRow(
-                label = "GRÖSSE",
+                label = "SIZE",
                 value = "${hexSizeDp}dp",
                 onLabelClick = { soloControl = "size" }
             ) {
-                Slider(
+                CorpoSlider(
                     value = hexSizeDp.toFloat(),
                     onValueChange = { onHexSizeChange(it.toInt()) },
                     valueRange = 60f..170f,
-                    colors = sliderColors()
                 )
             }
 
             SettingRow(
-                label = "ANZAHL",
-                value = "${RING_COUNTS[hexCountIndex]}",
+                label = "COUNT",
+                value = "$hexCount",
                 onLabelClick = { soloControl = "count" }
             ) {
-                Slider(
-                    value = hexCountIndex.toFloat(),
-                    onValueChange = { onHexCountIndexChange(it.toInt()) },
-                    valueRange = 0f..(RING_COUNTS.size - 1).toFloat(),
-                    steps = RING_COUNTS.size - 2,
-                    colors = sliderColors()
+                // Exact, one-tile-at-a-time — not snapped to symmetric ring totals. How many
+                // actually fit at the current size is the user's call; if a combination doesn't
+                // fit, the grid auto-shrinks tile size and the hint below explains why.
+                CorpoSlider(
+                    value = hexCount.toFloat(),
+                    onValueChange = { onHexCountChange(it.toInt()) },
+                    valueRange = 1f..MAX_HEX_COUNT.toFloat(),
                 )
             }
 
             if (didShrinkToFit) {
                 Text(
-                    text = "PASST NICHT AUF DEN SCREEN — GRÖSSE AUTOMATISCH VERKLEINERT",
+                    text = "DOESN'T FIT THE SCREEN — SIZE AUTO-SHRUNK",
                     color = LaunColors.dim,
                     fontFamily = MonoFontFamily,
                     fontSize = 9.sp,
@@ -170,64 +237,281 @@ fun SettingsSheet(
                 )
             }
 
-            ToggleRow(label = "APP-ICONS STATT NAME", checked = showAppIcons, onCheckedChange = onShowAppIconsChange)
-
-            Text(
-                text = "ANIMATION",
-                color = LaunColors.dim,
-                fontFamily = MonoFontFamily,
-                fontSize = 10.sp,
-                letterSpacing = 1.sp,
-                modifier = Modifier.padding(top = 10.dp, bottom = 6.dp)
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                REVEAL_ANIMATIONS.forEachIndexed { i, name ->
-                    val selected = i == revealAnimation
-                    Text(
-                        text = name,
-                        color = if (selected) LaunColors.fg else LaunColors.dim,
-                        fontFamily = MonoFontFamily,
-                        fontSize = 9.5.sp,
-                        letterSpacing = 0.6.sp,
-                        modifier = Modifier
-                            .border(1.dp, if (selected) LaunColors.fg else LaunColors.border)
-                            .clickable { onRevealAnimationChange(i) }
-                            .padding(horizontal = 10.dp, vertical = 7.dp)
+            SectionHeader(title = "APPEARANCE")
+            ToggleRow(label = "APP ICONS INSTEAD OF NAME", checked = showAppIcons, onCheckedChange = onShowAppIconsChange)
+            if (showAppIcons) {
+                // Range is capped at the same 20..75% the icon is clamped to at draw time — the
+                // slider itself can't offer a value that would ever crowd or cross the tile edge.
+                SettingRow(
+                    label = "ICON SIZE",
+                    value = "$iconSizePercent%",
+                    modifier = Modifier.padding(top = 6.dp)
+                ) {
+                    CorpoSlider(
+                        value = iconSizePercent.toFloat(),
+                        onValueChange = { onIconSizePercentChange(it.toInt()) },
+                        valueRange = 20f..75f,
                     )
                 }
             }
 
-            ToggleRow(
-                label = "HUD-STATUSLEISTE",
-                checked = hudVisible,
-                onCheckedChange = onHudVisibleChange,
-                modifier = Modifier.padding(top = 10.dp)
+            SectionHeader(title = "ANIMATION")
+            PickerRow(
+                label = "TILE REVEAL",
+                value = if (revealAnimation < 0) "NONE" else REVEAL_ANIMATIONS[revealAnimation],
+                onClick = { showAnimationPicker = true }
             )
-            if (hudVisible) {
-                Column(modifier = Modifier.padding(start = 12.dp)) {
-                    ToggleRow(label = "STATUS", checked = hudShowStatus, onCheckedChange = onHudShowStatusChange)
-                    ToggleRow(label = "UHRZEIT", checked = hudShowClock, onCheckedChange = onHudShowClockChange)
-                    ToggleRow(label = "AKKU", checked = hudShowBattery, onCheckedChange = onHudShowBatteryChange)
-                    ToggleRow(label = "SIGNAL", checked = hudShowSignal, onCheckedChange = onHudShowSignalChange)
-                    ToggleRow(label = "APP-ANZAHL", checked = hudShowAppCount, onCheckedChange = onHudShowAppCountChange)
-                    ToggleRow(label = "CURSOR", checked = hudShowCursor, onCheckedChange = onHudShowCursorChange)
+            SettingRow(
+                label = "ANIMATION SPEED",
+                value = if (animationSpeed == 0) "INSTANT" else "$animationSpeed",
+                modifier = Modifier.padding(top = 10.dp)
+            ) {
+                CorpoSlider(
+                    value = animationSpeed.toFloat(),
+                    onValueChange = { onAnimationSpeedChange(it.toInt()) },
+                    valueRange = 0f..100f,
+                )
+            }
+
+            SectionHeader(title = "BACKGROUND")
+            PickerRow(
+                label = "SOURCE",
+                value = when {
+                    backgroundAnimation >= 0 -> BACKGROUND_ANIMATIONS[backgroundAnimation]
+                    showWallpaper -> "ANDROID WALLPAPER"
+                    else -> "NONE"
+                },
+                onClick = { showBackgroundPicker = true }
+            )
+            if (showWallpaper || backgroundAnimation >= 0) {
+                SettingRow(
+                    label = "OPACITY",
+                    value = "$backgroundOpacity%",
+                    modifier = Modifier.padding(top = 10.dp)
+                ) {
+                    CorpoSlider(
+                        value = backgroundOpacity.toFloat(),
+                        onValueChange = { onBackgroundOpacityChange(it.toInt()) },
+                        valueRange = 0f..100f,
+                    )
                 }
             }
-            ToggleRow(label = "VOLLBILDMODUS", checked = immersiveEnabled, onCheckedChange = onImmersiveEnabledChange)
+
+            SectionHeader(title = "STATUS BAR")
+            ToggleRow(label = "SHOW", checked = hudVisible, onCheckedChange = onHudVisibleChange)
+            Column(modifier = Modifier.padding(start = 12.dp).alpha(if (hudVisible) 1f else 0.35f)) {
+                ToggleRow(label = "STATUS", checked = hudShowStatus, onCheckedChange = onHudShowStatusChange, enabled = hudVisible)
+                ToggleRow(label = "CLOCK", checked = hudShowClock, onCheckedChange = onHudShowClockChange, enabled = hudVisible)
+                ToggleRow(label = "MILLISECONDS", checked = hudShowClockMillis, onCheckedChange = onHudShowClockMillisChange, enabled = hudVisible && hudShowClock)
+                ToggleRow(label = "BATTERY", checked = hudShowBattery, onCheckedChange = onHudShowBatteryChange, enabled = hudVisible)
+                ToggleRow(label = "BATTERY PERCENT", checked = hudShowBatteryPercent, onCheckedChange = onHudShowBatteryPercentChange, enabled = hudVisible && hudShowBattery)
+                ToggleRow(label = "SIGNAL", checked = hudShowSignal, onCheckedChange = onHudShowSignalChange, enabled = hudVisible)
+                ToggleRow(label = "WIFI", checked = hudShowWifi, onCheckedChange = onHudShowWifiChange, enabled = hudVisible)
+                ToggleRow(label = "BLUETOOTH", checked = hudShowBluetooth, onCheckedChange = onHudShowBluetoothChange, enabled = hudVisible)
+                ToggleRow(label = "CURSOR", checked = hudShowCursor, onCheckedChange = onHudShowCursorChange, enabled = hudVisible)
+            }
+
+            SectionHeader(title = "SYSTEM")
+            ToggleRow(label = "FULLSCREEN MODE", checked = immersiveEnabled, onCheckedChange = onImmersiveEnabledChange)
+            LinkRow(text = "FAQ", topPadding = 14.dp, onClick = onFaqClick)
+            LinkRow(text = "ABOUT LAUNCHER", onClick = onAboutClick)
+            LinkRow(text = "RESET TO DEFAULTS", onClick = onResetClick)
+        }
+    }
+
+    if (showAnimationPicker) {
+        OptionPickerSheet(
+            title = "TILE REVEAL ANIMATION",
+            options = listOf("NONE") + REVEAL_ANIMATIONS,
+            selectedIndex = revealAnimation + 1,
+            onSelect = { onRevealAnimationChange(it - 1); replayPreview() },
+            onDismiss = { showAnimationPicker = false },
+            immersiveEnabled = immersiveEnabled
+        ) {
+            TilePreviewCluster(
+                slots = slots,
+                tileColors = tileColors,
+                showIcons = showAppIcons,
+                iconSizePercent = iconSizePercent,
+                revealAnimation = revealAnimation,
+                // Fixed, not the live setting — otherwise a fast/instant configured speed would
+                // make the preview flash by too quickly (or not animate at all) to see anything.
+                animationSpeed = PREVIEW_ANIMATION_SPEED,
+                isOpen = previewOpen,
+                tileCount = hexCount,
+                backgroundAnimationKind = backgroundAnimation,
+                showAndroidWallpaper = showWallpaper,
+                wallpaperBitmap = wallpaperBitmap,
+                backgroundOpacity = backgroundOpacity / 100f,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp)
+                    .clickable { replayPreview() }
+            )
+        }
+    }
+
+    if (showBackgroundPicker) {
+        // -1 = NONE, -2 = the real Android wallpaper, 0.. = an index into BACKGROUND_ANIMATIONS.
+        val options = listOf("NONE", "ANDROID WALLPAPER") + BACKGROUND_ANIMATIONS
+        val selectedIndex = when {
+            backgroundAnimation >= 0 -> backgroundAnimation + 2
+            showWallpaper -> 1
+            else -> 0
+        }
+        OptionPickerSheet(
+            title = "BACKGROUND",
+            options = options,
+            selectedIndex = selectedIndex,
+            onSelect = { index ->
+                when (index) {
+                    0 -> { onShowWallpaperChange(false); onBackgroundAnimationChange(-1) }
+                    1 -> onShowWallpaperChange(true)
+                    else -> onBackgroundAnimationChange(index - 2)
+                }
+            },
+            onDismiss = { showBackgroundPicker = false },
+            immersiveEnabled = immersiveEnabled
+        ) {
+            TilePreviewCluster(
+                slots = slots,
+                tileColors = tileColors,
+                showIcons = showAppIcons,
+                iconSizePercent = iconSizePercent,
+                revealAnimation = revealAnimation,
+                // Fixed, not the live setting — otherwise a fast/instant configured speed would
+                // make the preview flash by too quickly (or not animate at all) to see anything.
+                animationSpeed = PREVIEW_ANIMATION_SPEED,
+                isOpen = true,
+                tileCount = hexCount,
+                backgroundAnimationKind = backgroundAnimation,
+                showAndroidWallpaper = showWallpaper,
+                wallpaperBitmap = wallpaperBitmap,
+                backgroundOpacity = backgroundOpacity / 100f,
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
+            )
         }
     }
 }
 
+/**
+ * Flat, hard-edged slider matching the terminal aesthetic — a thin rectangular track with a
+ * bar-shaped thumb, no pill shapes or rounded caps like Material3's default Slider.
+ */
 @Composable
-private fun sliderColors() = SliderDefaults.colors(
-    thumbColor = LaunColors.fg,
-    activeTrackColor = LaunColors.fg,
-    inactiveTrackColor = LaunColors.border
-)
+private fun CorpoSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int = 0,
+    modifier: Modifier = Modifier
+) {
+    var widthPx by remember { mutableFloatStateOf(0f) }
+
+    fun snap(raw: Float): Float {
+        val clamped = raw.coerceIn(valueRange.start, valueRange.endInclusive)
+        if (steps <= 0) return clamped
+        val segments = steps + 1
+        val stepSize = (valueRange.endInclusive - valueRange.start) / segments
+        val idx = ((clamped - valueRange.start) / stepSize).roundToInt()
+        return (valueRange.start + idx * stepSize).coerceIn(valueRange.start, valueRange.endInclusive)
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(28.dp)
+            .onSizeChanged { widthPx = it.width.toFloat() }
+            .pointerInput(valueRange, steps) {
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    fun updateFromX(x: Float) {
+                        if (widthPx <= 0f) return
+                        val fraction = (x / widthPx).coerceIn(0f, 1f)
+                        onValueChange(snap(valueRange.start + fraction * (valueRange.endInclusive - valueRange.start)))
+                    }
+                    updateFromX(down.position.x)
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull() ?: break
+                        updateFromX(change.position.x)
+                        if (change.changedToUp()) break
+                    }
+                }
+            }
+    ) {
+        val fraction = if (valueRange.endInclusive > valueRange.start) {
+            ((value - valueRange.start) / (valueRange.endInclusive - valueRange.start)).coerceIn(0f, 1f)
+        } else 0f
+
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val cy = size.height / 2f
+            val trackPx = 2.dp.toPx()
+            drawRect(
+                color = LaunColors.border,
+                topLeft = Offset(0f, cy - trackPx / 2f),
+                size = Size(size.width, trackPx)
+            )
+            drawRect(
+                color = LaunColors.fg,
+                topLeft = Offset(0f, cy - trackPx / 2f),
+                size = Size(size.width * fraction, trackPx)
+            )
+            if (steps > 0) {
+                val tickPx = 1.dp.toPx()
+                val tickHeightPx = 8.dp.toPx()
+                for (i in 0..(steps + 1)) {
+                    val tx = size.width * i / (steps + 1)
+                    drawRect(
+                        color = LaunColors.bg2,
+                        topLeft = Offset((tx - tickPx / 2f).coerceIn(0f, size.width - tickPx), cy - tickHeightPx / 2f),
+                        size = Size(tickPx, tickHeightPx)
+                    )
+                }
+            }
+            val thumbWidthPx = 3.dp.toPx()
+            val thumbHeightPx = 18.dp.toPx()
+            val thumbX = (size.width * fraction).coerceIn(thumbWidthPx / 2f, size.width - thumbWidthPx / 2f)
+            drawRect(
+                color = LaunColors.fg,
+                topLeft = Offset(thumbX - thumbWidthPx / 2f, cy - thumbHeightPx / 2f),
+                size = Size(thumbWidthPx, thumbHeightPx)
+            )
+        }
+    }
+}
+
+/** Flat rectangular toggle — a hard-edged track + sliding block thumb instead of Material3's pill. */
+@Composable
+private fun CorpoSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, enabled: Boolean = true) {
+    val thumbOffset by animateDpAsState(targetValue = if (checked) 18.dp else 2.dp, label = "switchThumb")
+    Box(
+        modifier = Modifier
+            .width(36.dp)
+            .height(16.dp)
+            .background(if (checked) LaunColors.fg else Color.Transparent)
+            .border(1.dp, if (checked) LaunColors.fg else LaunColors.border, RectangleShape)
+            .clickable(enabled = enabled) { onCheckedChange(!checked) }
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(start = thumbOffset, top = 2.dp)
+                .width(12.dp)
+                .height(12.dp)
+                .background(if (checked) LaunColors.bg else LaunColors.dim)
+        )
+    }
+}
 
 @Composable
-private fun SettingRow(label: String, value: String, onLabelClick: (() -> Unit)? = null, content: @Composable () -> Unit) {
-    Column(modifier = Modifier.padding(bottom = 6.dp)) {
+private fun SettingRow(
+    label: String,
+    value: String,
+    onLabelClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    Column(modifier = modifier.padding(bottom = 6.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
@@ -246,8 +530,60 @@ private fun SettingRow(label: String, value: String, onLabelClick: (() -> Unit)?
     }
 }
 
+/** A settings row that opens a dedicated picker sheet instead of holding its own control inline —
+ *  used for choices with enough options that a horizontal chip strip stopped being scannable. */
 @Composable
-private fun ToggleRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+private fun PickerRow(label: String, value: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 6.dp)
+            .border(1.dp, LaunColors.border)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, color = LaunColors.dim, fontFamily = MonoFontFamily, fontSize = 10.sp, letterSpacing = 1.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(value, color = LaunColors.fg, fontFamily = MonoFontFamily, fontSize = 10.sp)
+            Text(
+                "  ›",
+                color = LaunColors.dim,
+                fontFamily = MonoFontFamily,
+                fontSize = 11.sp
+            )
+        }
+    }
+}
+
+/** Bordered, centered, clickable text row — used for the SYSTEM section's FAQ/About/Reset links. */
+@Composable
+private fun LinkRow(text: String, onClick: () -> Unit, topPadding: androidx.compose.ui.unit.Dp = 8.dp) {
+    Text(
+        text = text,
+        color = LaunColors.dim,
+        fontFamily = MonoFontFamily,
+        fontSize = 10.sp,
+        letterSpacing = 1.sp,
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = topPadding)
+            .border(1.dp, LaunColors.border)
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp)
+    )
+}
+
+@Composable
+private fun ToggleRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
+) {
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -256,15 +592,27 @@ private fun ToggleRow(label: String, checked: Boolean, onCheckedChange: (Boolean
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(label, color = LaunColors.dim, fontFamily = MonoFontFamily, fontSize = 10.sp, letterSpacing = 1.sp)
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = LaunColors.bg,
-                checkedTrackColor = LaunColors.fg,
-                uncheckedThumbColor = LaunColors.dim,
-                uncheckedTrackColor = LaunColors.border
-            )
+        CorpoSwitch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+    }
+}
+
+/** Groups related settings under a labeled divider, so the sheet reads as sections instead of a flat list. */
+@Composable
+private fun SectionHeader(title: String, topPadding: androidx.compose.ui.unit.Dp = 18.dp) {
+    Column(modifier = Modifier.padding(top = topPadding, bottom = 10.dp)) {
+        Text(
+            text = title,
+            color = LaunColors.fg,
+            fontFamily = MonoFontFamily,
+            fontSize = 9.sp,
+            letterSpacing = 2.sp
+        )
+        Box(
+            modifier = Modifier
+                .padding(top = 6.dp)
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(LaunColors.border)
         )
     }
 }
