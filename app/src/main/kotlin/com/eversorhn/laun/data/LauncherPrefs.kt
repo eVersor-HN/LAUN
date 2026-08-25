@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -50,6 +51,10 @@ data class LauncherSettings(
     /** 50..200% — visual size of the animated background's elements (particles/lines/shards).
      *  Only applies to animated backgrounds. */
     val backgroundEffectSize: Int = 100,
+    /** #RRGGBB, one of the same 20 tile accent colors — tints the animated background's own
+     *  elements (nodes/lines/particles/text). Null means the default white. Doesn't apply to
+     *  OLED BLACK (a flat black fill with nothing to tint) or the real wallpaper. */
+    val backgroundColor: String? = null,
     val hasShownDefaultLauncherHint: Boolean = false,
     val hasShownGestureHint: Boolean = false,
     val tileColors: Map<String, String> = emptyMap(),
@@ -67,6 +72,10 @@ data class LauncherSettings(
     /** Explicit (x, y) in dp, top-left origin — only consulted while [freePositionMode] is on;
      *  a slot with no entry here still renders at its normal honeycomb position until dragged. */
     val freeformPositions: Map<Int, Pair<Float, Float>> = emptyMap(),
+    /** When on (and [freePositionMode] is off), a drag can be released anywhere near a slot, not
+     *  precisely on its own small hex hitbox, and it snaps to whichever slot is closest — the
+     *  freedom of dragging anywhere, but always landing grid-aligned like a normal drag. */
+    val snapMode: Boolean = false,
     /** Seconds of holding still on a tile before its color menu opens by itself — 1..60. */
     val colorMenuAutoOpenSeconds: Int = 1,
     /** Per-slot size override as a percent of the global SIZE setting — 50..200. A slot with no
@@ -76,7 +85,11 @@ data class LauncherSettings(
     /** When on, the hex grid is shown immediately on launch/resume instead of the empty STANDBY
      *  screen that normally needs a tap to reveal it — the grid simply never collapses. Combine
      *  with [revealAnimation] = -1 for tiles that are just always there, no tap and no animation. */
-    val alwaysShowGrid: Boolean = false
+    val alwaysShowGrid: Boolean = false,
+    /** Per-app package name -> (icon pack package name, drawable name), set via an installed icon
+     *  pack's own catalogue instead of the app's real icon or its name text. Overrides both the
+     *  label and the icon everywhere that app's tile is drawn; resettable independently per app. */
+    val tileIconOverrides: Map<String, Pair<String, String>> = emptyMap()
 )
 
 /** Rename is meant to shorten a label for a tile, not hold a paragraph — also keeps the picker
@@ -124,15 +137,18 @@ class LauncherPrefs(private val context: Context) {
         val BACKGROUND_OPACITY = intPreferencesKey("background_opacity")
         val BACKGROUND_INTENSITY = intPreferencesKey("background_intensity")
         val BACKGROUND_EFFECT_SIZE = intPreferencesKey("background_effect_size")
+        val BACKGROUND_COLOR = stringPreferencesKey("background_color")
         val HAS_SHOWN_DEFAULT_LAUNCHER_HINT = booleanPreferencesKey("has_shown_default_launcher_hint")
         val HAS_SHOWN_GESTURE_HINT = booleanPreferencesKey("has_shown_gesture_hint")
         val TILE_COLORS = stringSetPreferencesKey("tile_colors")
         val SLOT_APPS = stringSetPreferencesKey("slot_apps")
         val CUSTOM_APP_NAMES = stringSetPreferencesKey("custom_app_names")
         val FREE_POSITION_MODE = booleanPreferencesKey("free_position_mode")
+        val SNAP_MODE = booleanPreferencesKey("snap_mode")
         val FREEFORM_POSITIONS = stringSetPreferencesKey("freeform_positions")
         val COLOR_MENU_AUTO_OPEN_SECONDS = intPreferencesKey("color_menu_auto_open_seconds")
         val TILE_SIZE_OVERRIDES = stringSetPreferencesKey("tile_size_overrides")
+        val TILE_ICON_OVERRIDES = stringSetPreferencesKey("tile_icon_overrides")
         val ALWAYS_SHOW_GRID = booleanPreferencesKey("always_show_grid")
     }
 
@@ -164,6 +180,7 @@ class LauncherPrefs(private val context: Context) {
             backgroundOpacity = (prefs[Keys.BACKGROUND_OPACITY] ?: 100).coerceIn(0, 100),
             backgroundIntensity = (prefs[Keys.BACKGROUND_INTENSITY] ?: 100).coerceIn(50, 200),
             backgroundEffectSize = (prefs[Keys.BACKGROUND_EFFECT_SIZE] ?: 100).coerceIn(50, 200),
+            backgroundColor = prefs[Keys.BACKGROUND_COLOR],
             hasShownDefaultLauncherHint = prefs[Keys.HAS_SHOWN_DEFAULT_LAUNCHER_HINT] ?: false,
             hasShownGestureHint = prefs[Keys.HAS_SHOWN_GESTURE_HINT] ?: false,
             tileColors = (prefs[Keys.TILE_COLORS] ?: emptySet())
@@ -187,6 +204,7 @@ class LauncherPrefs(private val context: Context) {
                 }
                 .toMap(),
             freePositionMode = prefs[Keys.FREE_POSITION_MODE] ?: false,
+            snapMode = prefs[Keys.SNAP_MODE] ?: false,
             freeformPositions = (prefs[Keys.FREEFORM_POSITIONS] ?: emptySet())
                 .mapNotNull { entry ->
                     val parts = entry.split('|')
@@ -207,7 +225,14 @@ class LauncherPrefs(private val context: Context) {
                     idx to percent.coerceIn(50, 200)
                 }
                 .toMap(),
-            alwaysShowGrid = prefs[Keys.ALWAYS_SHOW_GRID] ?: false
+            alwaysShowGrid = prefs[Keys.ALWAYS_SHOW_GRID] ?: false,
+            tileIconOverrides = (prefs[Keys.TILE_ICON_OVERRIDES] ?: emptySet())
+                .mapNotNull { entry ->
+                    val parts = entry.split('|', limit = 3)
+                    if (parts.size != 3) return@mapNotNull null
+                    parts[0] to (parts[1] to parts[2])
+                }
+                .toMap()
         )
     }
 
@@ -302,6 +327,13 @@ class LauncherPrefs(private val context: Context) {
         context.dataStore.edit { it[Keys.BACKGROUND_INTENSITY] = percent.coerceIn(50, 200) }
     }
 
+    /** Null clears the override, back to the default white. */
+    suspend fun setBackgroundColor(colorHex: String?) {
+        context.dataStore.edit { prefs ->
+            if (colorHex != null) prefs[Keys.BACKGROUND_COLOR] = colorHex else prefs.remove(Keys.BACKGROUND_COLOR)
+        }
+    }
+
     suspend fun setBackgroundEffectSize(percent: Int) {
         context.dataStore.edit { it[Keys.BACKGROUND_EFFECT_SIZE] = percent.coerceIn(50, 200) }
     }
@@ -344,7 +376,9 @@ class LauncherPrefs(private val context: Context) {
             prefs[Keys.BACKGROUND_OPACITY] = d.backgroundOpacity
             prefs[Keys.BACKGROUND_INTENSITY] = d.backgroundIntensity
             prefs[Keys.BACKGROUND_EFFECT_SIZE] = d.backgroundEffectSize
+            prefs.remove(Keys.BACKGROUND_COLOR)
             prefs[Keys.FREE_POSITION_MODE] = d.freePositionMode
+            prefs[Keys.SNAP_MODE] = d.snapMode
             prefs[Keys.COLOR_MENU_AUTO_OPEN_SECONDS] = d.colorMenuAutoOpenSeconds
             prefs[Keys.ALWAYS_SHOW_GRID] = d.alwaysShowGrid
         }
@@ -387,8 +421,25 @@ class LauncherPrefs(private val context: Context) {
         }
     }
 
+    /** Both null clears the override, reverting the tile to its real icon and name. */
+    suspend fun setTileIconOverride(packageName: String, iconPackPackage: String?, drawableName: String?) {
+        context.dataStore.edit { prefs ->
+            val current = (prefs[Keys.TILE_ICON_OVERRIDES] ?: emptySet())
+                .filterNot { it.startsWith("$packageName|") }
+                .toMutableSet()
+            if (iconPackPackage != null && drawableName != null) {
+                current += "$packageName|$iconPackPackage|$drawableName"
+            }
+            prefs[Keys.TILE_ICON_OVERRIDES] = current
+        }
+    }
+
     suspend fun setFreePositionMode(enabled: Boolean) {
         context.dataStore.edit { it[Keys.FREE_POSITION_MODE] = enabled }
+    }
+
+    suspend fun setSnapMode(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.SNAP_MODE] = enabled }
     }
 
     suspend fun setAlwaysShowGrid(enabled: Boolean) {

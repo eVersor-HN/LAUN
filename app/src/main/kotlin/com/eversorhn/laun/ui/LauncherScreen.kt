@@ -41,6 +41,7 @@ import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.eversorhn.laun.data.AppInfo
+import com.eversorhn.laun.data.IconPackRepository
 import com.eversorhn.laun.data.InstalledAppsRepository
 import com.eversorhn.laun.data.LauncherPrefs
 import com.eversorhn.laun.ui.theme.LaunColors
@@ -105,11 +106,27 @@ fun LauncherScreen(
         rawApps = repository.loadApps()
         appsLoaded = true
     }
-    // Custom names (long-press-to-rename in the app picker) applied once here so every consumer
-    // downstream — tiles, folders, the picker list itself — sees the override automatically.
-    val apps = remember(rawApps, settings.customAppNames) {
-        if (settings.customAppNames.isEmpty()) rawApps
-        else rawApps.map { app -> settings.customAppNames[app.packageName]?.let { app.copy(label = it) } ?: app }
+    // Icon-pack overrides (chosen from an installed icon pack's own catalogue) resolve to real
+    // bitmaps asynchronously — loaded once here per override set, cached by package name, so every
+    // consumer downstream sees the swapped icon the same way it already sees renamed labels.
+    val iconPackRepository = remember { IconPackRepository(context) }
+    var iconOverrideBitmaps by remember { mutableStateOf<Map<String, ImageBitmap>>(emptyMap()) }
+    LaunchedEffect(settings.tileIconOverrides) {
+        iconOverrideBitmaps = settings.tileIconOverrides.mapNotNull { (pkg, override) ->
+            val (iconPackPkg, drawableName) = override
+            iconPackRepository.loadIcon(iconPackPkg, drawableName)?.let { pkg to it }
+        }.toMap()
+    }
+    // Custom names (long-press-to-rename in the app picker) and icon-pack overrides applied once
+    // here so every consumer downstream — tiles, folders, the picker list itself — sees both
+    // automatically.
+    val apps = remember(rawApps, settings.customAppNames, iconOverrideBitmaps) {
+        rawApps.map { app ->
+            val name = settings.customAppNames[app.packageName]
+            val icon = iconOverrideBitmaps[app.packageName]
+            if (name == null && icon == null) app
+            else app.copy(label = name ?: app.label, icon = icon ?: app.icon, iconOverridden = icon != null)
+        }
     }
 
     // Installing/uninstalling an app while LAUN is running (the normal case — you background the
@@ -141,6 +158,7 @@ fun LauncherScreen(
     val isOpen = settings.alwaysShowGrid || manualOpen
     var showSettings by remember { mutableStateOf(false) }
     var colorPickerSlot by remember { mutableStateOf<Int?>(null) }
+    var iconPickerPackage by remember { mutableStateOf<String?>(null) }
     // Carried straight from HexGrid's onLongPressSlot instead of re-derived via slots.getOrNull(slot)
     // below — that lookup is bounded to liveHexCount and silently came up empty for any pinned tile
     // beyond it (free placement), so picking a color for one did nothing.
@@ -293,11 +311,15 @@ fun LauncherScreen(
     ) {
         val backgroundOpacityFraction = settings.backgroundOpacity / 100f
         if (settings.backgroundAnimation >= 0) {
+            val wallpaperTint = settings.backgroundColor
+                ?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
+                ?: Color.White
             AnimatedWallpaper(
                 kind = settings.backgroundAnimation,
                 opacity = backgroundOpacityFraction,
                 intensity = settings.backgroundIntensity / 100f,
                 sizeScale = settings.backgroundEffectSize / 100f,
+                tint = wallpaperTint,
                 modifier = Modifier.fillMaxSize()
             )
         } else {
@@ -324,6 +346,7 @@ fun LauncherScreen(
             animationSpeed = settings.animationSpeed,
             isOpen = isOpen,
             freePositionMode = settings.freePositionMode,
+            snapMode = settings.snapMode,
             freeformPositions = freeformPositions,
             onFreeformPositionChange = { index, pos -> scope.launch { prefs.setFreeformPosition(index, pos.x, pos.y) } },
             colorMenuAutoOpenSeconds = settings.colorMenuAutoOpenSeconds,
@@ -402,6 +425,14 @@ fun LauncherScreen(
                 colorKey?.let { pkg -> scope.launch { prefs.setTileColor(pkg, null) } }
                 colorPickerSlot = null
             },
+            hasIconOverride = colorKey != null && settings.tileIconOverrides.containsKey(colorKey),
+            onChooseIcon = {
+                iconPickerPackage = colorKey
+                colorPickerSlot = null
+            },
+            onResetIcon = {
+                colorKey?.let { pkg -> scope.launch { prefs.setTileIconOverride(pkg, null, null) } }
+            },
             onEditApps = {
                 appPickerSlot = slot
                 colorPickerSlot = null
@@ -411,6 +442,22 @@ fun LauncherScreen(
                 colorPickerSlot = null
             },
             onDismiss = { colorPickerSlot = null }
+        )
+    }
+
+    iconPickerPackage?.let { pkg ->
+        IconPackPickerSheet(
+            immersiveEnabled = settings.immersiveEnabled,
+            hasOverride = settings.tileIconOverrides.containsKey(pkg),
+            onPick = { iconPackPkg, drawableName ->
+                scope.launch { prefs.setTileIconOverride(pkg, iconPackPkg, drawableName) }
+                iconPickerPackage = null
+            },
+            onReset = {
+                scope.launch { prefs.setTileIconOverride(pkg, null, null) }
+                iconPickerPackage = null
+            },
+            onDismiss = { iconPickerPackage = null }
         )
     }
 
@@ -470,6 +517,8 @@ fun LauncherScreen(
             didShrinkToFit = didShrinkToFit,
             freePositionMode = settings.freePositionMode,
             onFreePositionModeChange = { scope.launch { prefs.setFreePositionMode(it) } },
+            snapMode = settings.snapMode,
+            onSnapModeChange = { scope.launch { prefs.setSnapMode(it) } },
             colorMenuAutoOpenSeconds = settings.colorMenuAutoOpenSeconds,
             onColorMenuAutoOpenSecondsChange = { scope.launch { prefs.setColorMenuAutoOpenSeconds(it) } },
             hudVisible = settings.hudVisible,
@@ -517,6 +566,8 @@ fun LauncherScreen(
             onBackgroundIntensityChange = { scope.launch { prefs.setBackgroundIntensity(it) } },
             backgroundEffectSize = settings.backgroundEffectSize,
             onBackgroundEffectSizeChange = { scope.launch { prefs.setBackgroundEffectSize(it) } },
+            backgroundColor = settings.backgroundColor,
+            onBackgroundColorChange = { scope.launch { prefs.setBackgroundColor(it) } },
             slots = slots,
             tileColors = settings.tileColors,
             wallpaperBitmap = wallpaperBitmap,

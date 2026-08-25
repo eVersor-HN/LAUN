@@ -47,6 +47,9 @@ fun ColorPickerSheet(
     onResetSize: () -> Unit,
     onPick: (String) -> Unit,
     onReset: () -> Unit,
+    hasIconOverride: Boolean,
+    onChooseIcon: () -> Unit,
+    onResetIcon: () -> Unit,
     onEditApps: () -> Unit,
     onClearTile: () -> Unit,
     onDismiss: () -> Unit
@@ -129,6 +132,10 @@ fun ColorPickerSheet(
             )
             ActionRow(text = "RESET SIZE", onClick = onResetSize)
             if (singleApp != null) {
+                ActionRow(text = "CHOOSE ICON", onClick = onChooseIcon)
+                if (hasIconOverride) {
+                    ActionRow(text = "RESET ICON", onClick = onResetIcon)
+                }
                 ActionRow(text = "APP INFO", onClick = {
                     context.startActivity(
                         Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", singleApp.packageName, null))
@@ -166,7 +173,7 @@ private fun ActionRow(text: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ColorSwatch(color: Color, onClick: () -> Unit) {
+internal fun ColorSwatch(color: Color, onClick: () -> Unit) {
     androidx.compose.foundation.layout.Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -177,5 +184,5 @@ private fun ColorSwatch(color: Color, onClick: () -> Unit) {
     )
 }
 
-private fun Color.toHex(): String =
+internal fun Color.toHex(): String =
     "#%02X%02X%02X".format((red * 255).toInt(), (green * 255).toInt(), (blue * 255).toInt())

@@ -8,6 +8,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,6 +16,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -42,12 +47,15 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.eversorhn.laun.data.AppInfo
 import com.eversorhn.laun.data.BACKGROUND_ANIMATIONS
 import com.eversorhn.laun.data.MAX_HEX_COUNT
 import com.eversorhn.laun.data.REVEAL_ANIMATIONS
 import com.eversorhn.laun.ui.theme.LaunColors
 import com.eversorhn.laun.ui.theme.MonoFontFamily
+import com.eversorhn.laun.ui.theme.TILE_COLOR_PALETTE
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -71,6 +79,8 @@ fun SettingsSheet(
     didShrinkToFit: Boolean,
     freePositionMode: Boolean,
     onFreePositionModeChange: (Boolean) -> Unit,
+    snapMode: Boolean,
+    onSnapModeChange: (Boolean) -> Unit,
     colorMenuAutoOpenSeconds: Int,
     onColorMenuAutoOpenSecondsChange: (Int) -> Unit,
     hudVisible: Boolean,
@@ -115,6 +125,8 @@ fun SettingsSheet(
     onBackgroundIntensityChange: (Int) -> Unit,
     backgroundEffectSize: Int,
     onBackgroundEffectSizeChange: (Int) -> Unit,
+    backgroundColor: String?,
+    onBackgroundColorChange: (String?) -> Unit,
     slots: List<List<AppInfo>>,
     tileColors: Map<String, String>,
     wallpaperBitmap: ImageBitmap?,
@@ -131,6 +143,7 @@ fun SettingsSheet(
 
     var showAnimationPicker by remember { mutableStateOf(false) }
     var showBackgroundPicker by remember { mutableStateOf(false) }
+    var showColorPicker by remember { mutableStateOf(false) }
     // Toggling this replays the picker preview's reveal animation on demand (tapping an option,
     // or tapping the preview itself) instead of it only ever playing once on open.
     var previewOpen by remember { mutableStateOf(true) }
@@ -271,6 +284,27 @@ fun SettingsSheet(
                 )
             }
 
+            ToggleRow(
+                label = "SNAP MODE",
+                checked = snapMode,
+                onCheckedChange = onSnapModeChange,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            if (snapMode) {
+                Text(
+                    text = if (freePositionMode) {
+                        "NO EFFECT WHILE FREE POSITION MODE IS ON"
+                    } else {
+                        "DRAG DOESN'T NEED TO LAND EXACTLY ON A TILE — IT SNAPS TO WHICHEVER SLOT IS CLOSEST"
+                    },
+                    color = LaunColors.dim,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 9.sp,
+                    letterSpacing = 0.6.sp,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                )
+            }
+
             SettingRow(
                 label = "COLOR MENU DELAY",
                 value = if (colorMenuAutoOpenSeconds == 1) "1 SEC" else "$colorMenuAutoOpenSeconds SEC",
@@ -367,6 +401,11 @@ fun SettingsSheet(
                         valueRange = 50f..200f,
                     )
                 }
+                PickerRow(
+                    label = "COLOR",
+                    value = backgroundColor ?: "DEFAULT",
+                    onClick = { showColorPicker = true }
+                )
             }
 
             SectionHeader(title = "STATUS BAR")
@@ -489,6 +528,66 @@ fun SettingsSheet(
                 backgroundEffectSize = backgroundEffectSize / 100f,
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
             )
+        }
+    }
+
+    // A compact standalone dialog rather than another row buried in the scrolling list below —
+    // all 20 swatches reachable in one tap, nothing to scroll to find.
+    if (showColorPicker) {
+        Dialog(onDismissRequest = { showColorPicker = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            HideSystemBarsWhileShown(immersiveEnabled)
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 260.dp)
+                    .background(LaunColors.bg2)
+                    .border(1.dp, LaunColors.border)
+                    .padding(16.dp)
+            ) {
+                Text(
+                    text = "BACKGROUND COLOR",
+                    color = LaunColors.dim,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 9.5.sp,
+                    letterSpacing = 1.sp,
+                    modifier = Modifier.padding(bottom = 10.dp)
+                )
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(5),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(TILE_COLOR_PALETTE) { color ->
+                        val hex = color.toHex()
+                        Box(
+                            modifier = Modifier
+                                .aspectRatio(1f)
+                                .background(color)
+                                .border(1.dp, if (backgroundColor == hex) LaunColors.fg else Color.White.copy(alpha = 0.15f))
+                                .clickable {
+                                    onBackgroundColorChange(hex)
+                                    showColorPicker = false
+                                }
+                        )
+                    }
+                }
+                Text(
+                    text = "RESET",
+                    color = LaunColors.dim,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 9.5.sp,
+                    letterSpacing = 1.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp)
+                        .border(1.dp, LaunColors.border)
+                        .clickable {
+                            onBackgroundColorChange(null)
+                            showColorPicker = false
+                        }
+                        .padding(vertical = 8.dp)
+                )
+            }
         }
     }
 }

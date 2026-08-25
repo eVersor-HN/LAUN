@@ -157,6 +157,10 @@ fun HexGrid(
      *  margin — instead of resolving through [onReorderSlots] at all. Tiles still can't end up
      *  close enough to overlap (see [resolveFreePosition]), which is the one constraint kept. */
     freePositionMode: Boolean = false,
+    /** When on (and free position mode is off), a drag can be released anywhere near a slot —
+     *  not precisely on its own small hex hitbox — and it snaps to whichever slot's center is
+     *  closest, same grid-aligned result as a normal drag, just far more forgiving to aim. */
+    snapMode: Boolean = false,
     /** Explicit per-slot (x, y) in dp, top-left origin — only consulted while [freePositionMode]
      *  is on; a slot missing here still renders at its normal honeycomb position until dragged. */
     freeformPositions: Map<Int, Offset> = emptyMap(),
@@ -303,6 +307,15 @@ fun HexGrid(
         val density = LocalDensity.current
         fun hitTile(point: Offset): Int? =
             tiles.lastOrNull { hexContains(point, it, density) }?.index
+        // Snap mode's whole point is a forgiving target — released anywhere, not just precisely
+        // on the target's own small hex hitbox — so this picks whichever tile center is closest
+        // to the point instead of requiring the point to land inside a hex shape at all.
+        fun nearestTile(point: Offset): Int? =
+            tiles.minByOrNull { tile ->
+                val cx = with(density) { tile.centerXDp.dp.toPx() }
+                val cy = with(density) { tile.centerYDp.dp.toPx() }
+                hypot((point.x - cx).toDouble(), (point.y - cy).toDouble())
+            }?.index
 
         var activeSlot by remember { mutableStateOf<Int?>(null) }
         var pressActive by remember { mutableStateOf(false) }
@@ -372,7 +385,7 @@ fun HexGrid(
                 // itself — the drag-release branch below reads it directly, and pointerInput only
                 // gets a fresh closure (with that decision's current value) when one of its keys
                 // actually changes, not on every recomposition.
-                .pointerInput(tiles, isOpen, freePositionMode) {
+                .pointerInput(tiles, isOpen, freePositionMode, snapMode) {
                     val topDeadZonePx = with(density) { TOP_DEAD_ZONE_DP.dp.toPx() }
                     val dragSlopPx = with(density) { DRAG_SLOP_DP.dp.toPx() }
                     awaitEachGesture {
@@ -466,7 +479,11 @@ fun HexGrid(
                                     dragOffsetPx = Offset(change.position.x - downPos.x, change.position.y - downPos.y)
                                     // Free-position mode has no discrete drop targets — the tile
                                     // just follows the finger and lands wherever it's released.
-                                    if (!freePositionMode) dragTargetSlot = hitTile(change.position)
+                                    dragTargetSlot = when {
+                                        freePositionMode -> null
+                                        snapMode -> nearestTile(change.position)
+                                        else -> hitTile(change.position)
+                                    }
                                 }
 
                                 if (change.changedToUp()) break
