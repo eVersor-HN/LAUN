@@ -88,6 +88,8 @@ fun LauncherScreen(
             slots = slots,
             hexSizeDp = liveHexSizeDp,
             tileColors = settings.tileColors,
+            showIcons = settings.showAppIcons,
+            revealAnimation = settings.revealAnimation,
             isOpen = isOpen,
             onOpen = { isOpen = true },
             onCloseBackground = { isOpen = false },
@@ -193,6 +195,10 @@ fun LauncherScreen(
                 scope.launch { prefs.setImmersiveEnabled(it) }
                 onImmersiveEnabledChange(it)
             },
+            showAppIcons = settings.showAppIcons,
+            onShowAppIconsChange = { scope.launch { prefs.setShowAppIcons(it) } },
+            revealAnimation = settings.revealAnimation,
+            onRevealAnimationChange = { scope.launch { prefs.setRevealAnimation(it) } },
             onDismiss = { showSettings = false }
         )
     }

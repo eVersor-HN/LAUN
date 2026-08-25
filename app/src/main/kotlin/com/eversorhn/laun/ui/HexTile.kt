@@ -3,6 +3,7 @@ package com.eversorhn.laun.ui
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -54,6 +55,8 @@ internal fun HexTile(
     isOpen: Boolean,
     isActive: Boolean,
     colorHex: String?,
+    showIcon: Boolean,
+    revealAnimation: Int,
     modifier: Modifier = Modifier
 ) {
     val progress = remember(tile.index) { Animatable(0f) }
@@ -63,16 +66,22 @@ internal fun HexTile(
     val flourish = remember(tile.index, isOpen) {
         Random.nextInt(-50, 51) to Random.nextInt(480, 681)
     }
+    // 0 = Hex Iris (gentle overshoot), 1 = Radial Pulse (bigger overshoot + a brightness flash).
+    val openEasing = if (revealAnimation == 1) CubicBezierEasing(0.2f, 2.4f, 0.3f, 1f)
+        else CubicBezierEasing(0.34f, 1.56f, 0.64f, 1f)
     LaunchedEffect(isOpen, tile.delayMs, flourish) {
         if (isOpen) {
             delay((tile.delayMs + flourish.first).coerceAtLeast(0).toLong())
-            // Hex Iris: scale out of the center with a slight overshoot, no translation/rotation.
-            progress.animateTo(1f, tween(flourish.second, easing = CubicBezierEasing(0.34f, 1.56f, 0.64f, 1f)))
+            progress.animateTo(1f, tween(flourish.second, easing = openEasing))
         } else {
             delay((tile.delayMs / 2).toLong())
             progress.animateTo(0f, tween(260, easing = CubicBezierEasing(0.7f, 0f, 0.84f, 0f)))
         }
     }
+    // Radial Pulse's "power-on" flash: brightest right as the tile pops past its resting scale,
+    // fading out as it settles — approximated with a white wash since graphicsLayer has no
+    // brightness filter to animate directly.
+    val flashAlpha = if (revealAnimation == 1) (progress.value - 1f).coerceIn(0f, 0.6f) * 1.5f else 0f
 
     val tileColor = remember(colorHex) {
         colorHex?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
@@ -126,36 +135,52 @@ internal fun HexTile(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Text(
-                    text = "APP_" + (tile.index + 1).toString().padStart(2, '0'),
-                    color = LaunColors.dim,
-                    fontFamily = MonoFontFamily,
-                    fontSize = 8.5.sp,
-                    letterSpacing = 0.8.sp,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Clip
-                )
-                if (tile.app != null) {
-                    Text(
-                        text = tile.app.label,
-                        color = LaunColors.fg,
-                        fontFamily = HeadFontFamily,
-                        fontSize = 10.5.sp,
-                        textAlign = TextAlign.Center,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 3.dp)
+                if (showIcon && tile.app != null) {
+                    Image(
+                        bitmap = tile.app.icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(28.dp)
                     )
                 } else {
                     Text(
-                        text = "+",
+                        text = "APP_" + (tile.index + 1).toString().padStart(2, '0'),
                         color = LaunColors.dim,
-                        fontFamily = HeadFontFamily,
-                        fontSize = 15.sp,
-                        modifier = Modifier.padding(top = 3.dp)
+                        fontFamily = MonoFontFamily,
+                        fontSize = 8.5.sp,
+                        letterSpacing = 0.8.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Clip
                     )
+                    if (tile.app != null) {
+                        Text(
+                            text = tile.app.label,
+                            color = LaunColors.fg,
+                            fontFamily = HeadFontFamily,
+                            fontSize = 10.5.sp,
+                            textAlign = TextAlign.Center,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 3.dp)
+                        )
+                    } else {
+                        Text(
+                            text = "+",
+                            color = LaunColors.dim,
+                            fontFamily = HeadFontFamily,
+                            fontSize = 15.sp,
+                            modifier = Modifier.padding(top = 3.dp)
+                        )
+                    }
                 }
+            }
+            if (flashAlpha > 0f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(HexShape)
+                        .background(Color.White.copy(alpha = flashAlpha))
+                )
             }
         }
     }

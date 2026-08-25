@@ -84,6 +84,8 @@ fun HexGrid(
     slots: List<AppInfo?>,
     hexSizeDp: Int,
     tileColors: Map<String, String>,
+    showIcons: Boolean,
+    revealAnimation: Int,
     isOpen: Boolean,
     onOpen: () -> Unit,
     onCloseBackground: () -> Unit,
@@ -224,28 +226,37 @@ fun HexGrid(
                         lastPointerPos = down.position
                         activeSlot = hitTile(down.position)
 
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull() ?: break
-                            lastPointerPos = change.position
-                            if (!longPressTriggered) {
-                                val hit = hitTile(change.position)
-                                if (hit != activeSlot) activeSlot = hit
+                        // A sheet/popup appearing mid-press (e.g. long-press opening settings)
+                        // can cancel this gesture from underneath instead of delivering a normal
+                        // "up" — without the finally, pressActive/activeSlot would stay stuck and
+                        // every gesture after that one (including the next long-press) would never
+                        // fire again until something else happened to force this whole block to
+                        // restart.
+                        try {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull() ?: break
+                                lastPointerPos = change.position
+                                if (!longPressTriggered) {
+                                    val hit = hitTile(change.position)
+                                    if (hit != activeSlot) activeSlot = hit
+                                }
+                                if (change.changedToUp()) break
                             }
-                            if (change.changedToUp()) break
-                        }
 
-                        if (!longPressTriggered) {
-                            val slot = activeSlot
-                            val app = tiles.firstOrNull { it.index == slot }?.app
-                            when {
-                                app != null -> onLaunch(app)
-                                slot != null -> onTapEmptySlot(slot)
-                                else -> onCloseBackground()
+                            if (!longPressTriggered) {
+                                val slot = activeSlot
+                                val app = tiles.firstOrNull { it.index == slot }?.app
+                                when {
+                                    app != null -> onLaunch(app)
+                                    slot != null -> onTapEmptySlot(slot)
+                                    else -> onCloseBackground()
+                                }
                             }
+                        } finally {
+                            pressActive = false
+                            activeSlot = null
                         }
-                        pressActive = false
-                        activeSlot = null
                     }
                 }
         ) {
@@ -255,6 +266,8 @@ fun HexGrid(
                     isOpen = isOpen,
                     isActive = tile.index == activeSlot,
                     colorHex = tile.app?.let { tileColors[it.packageName] },
+                    showIcon = showIcons,
+                    revealAnimation = revealAnimation,
                     modifier = Modifier
                         .offset(tile.centerXDp.dp - tile.widthDp / 2, tile.centerYDp.dp - tile.heightDp / 2)
                 )

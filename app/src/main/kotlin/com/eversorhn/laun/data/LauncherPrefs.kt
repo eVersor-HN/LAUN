@@ -25,11 +25,16 @@ data class LauncherSettings(
     val hudShowAppCount: Boolean = true,
     val hudShowCursor: Boolean = true,
     val immersiveEnabled: Boolean = true,
+    val showAppIcons: Boolean = false,
+    val revealAnimation: Int = 0,
     val tileColors: Map<String, String> = emptyMap(),
     val slotApps: Map<Int, String> = emptyMap()
 ) {
     val hexCount: Int get() = RING_COUNTS[hexCountIndex.coerceIn(RING_COUNTS.indices)]
 }
+
+/** Selectable tile reveal/close animations — index into this list is what's persisted. */
+val REVEAL_ANIMATIONS = listOf("HEX IRIS", "RADIAL PULSE")
 
 /**
  * Persists everything that was reset on every page reload in the demo.html prototype:
@@ -51,6 +56,8 @@ class LauncherPrefs(private val context: Context) {
         val HUD_SHOW_APP_COUNT = booleanPreferencesKey("hud_show_app_count")
         val HUD_SHOW_CURSOR = booleanPreferencesKey("hud_show_cursor")
         val IMMERSIVE_ENABLED = booleanPreferencesKey("immersive_enabled")
+        val SHOW_APP_ICONS = booleanPreferencesKey("show_app_icons")
+        val REVEAL_ANIMATION = intPreferencesKey("reveal_animation")
         val TILE_COLORS = stringSetPreferencesKey("tile_colors")
         val SLOT_APPS = stringSetPreferencesKey("slot_apps")
     }
@@ -67,6 +74,8 @@ class LauncherPrefs(private val context: Context) {
             hudShowAppCount = prefs[Keys.HUD_SHOW_APP_COUNT] ?: true,
             hudShowCursor = prefs[Keys.HUD_SHOW_CURSOR] ?: true,
             immersiveEnabled = prefs[Keys.IMMERSIVE_ENABLED] ?: true,
+            showAppIcons = prefs[Keys.SHOW_APP_ICONS] ?: false,
+            revealAnimation = (prefs[Keys.REVEAL_ANIMATION] ?: 0).coerceIn(REVEAL_ANIMATIONS.indices),
             tileColors = (prefs[Keys.TILE_COLORS] ?: emptySet())
                 .mapNotNull { entry ->
                     val i = entry.indexOf('|')
@@ -120,6 +129,14 @@ class LauncherPrefs(private val context: Context) {
 
     suspend fun setImmersiveEnabled(enabled: Boolean) {
         context.dataStore.edit { it[Keys.IMMERSIVE_ENABLED] = enabled }
+    }
+
+    suspend fun setShowAppIcons(show: Boolean) {
+        context.dataStore.edit { it[Keys.SHOW_APP_ICONS] = show }
+    }
+
+    suspend fun setRevealAnimation(index: Int) {
+        context.dataStore.edit { it[Keys.REVEAL_ANIMATION] = index.coerceIn(REVEAL_ANIMATIONS.indices) }
     }
 
     suspend fun setTileColor(packageName: String, colorHex: String?) {
