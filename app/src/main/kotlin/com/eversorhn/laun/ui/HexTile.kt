@@ -244,6 +244,9 @@ internal fun HexTile(
         ) {
             val app = tile.apps.singleOrNull()
             val isFolder = tile.apps.size > 1
+            // A chosen icon-pack icon shows regardless of the global toggle — picking one specific
+            // icon for this tile is the whole point, it shouldn't stay hidden behind a setting.
+            val effectiveShowIcon = showIcon || app?.iconOverridden == true
             // Text was tuned at the default 100dp tile size — scaling it by how far this tile's
             // actual width sits from that baseline keeps the label proportionate whether it's the
             // shared SIZE setting or a per-tile override (see the color menu's own SIZE slider)
@@ -255,7 +258,7 @@ internal fun HexTile(
                     .padding(horizontal = 10.dp),
                 contentAlignment = Alignment.Center
             ) {
-                if (showIcon && app != null) {
+                if (effectiveShowIcon && app != null) {
                     // Percent is of tile WIDTH, but a pointy-top hex is narrowest at its top/bottom
                     // points — capping the range itself (rather than trusting the caller) is what
                     // actually guarantees the icon can never crowd or cross the tile's edge,
@@ -318,7 +321,7 @@ internal fun HexTile(
                     }
                 }
             }
-            if (!showIcon && (app != null || isFolder)) {
+            if (!effectiveShowIcon && (app != null || isFolder)) {
                 Text(
                     text = if (isFolder) "FOLDER" else hexTag(app!!.packageName),
                     color = LaunColors.dim,

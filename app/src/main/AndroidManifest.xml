@@ -25,6 +25,12 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <!-- Same discovery convention every icon-pack app on the Play Store already registers
+             for, so any installed pack shows up here without pack-specific code. -->
+        <intent>
+            <action android:name="org.adw.launcher.THEMES" />
+            <category android:name="android.intent.category.DEFAULT" />
+        </intent>
     </queries>
 
     <application

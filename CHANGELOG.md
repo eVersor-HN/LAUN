@@ -4,6 +4,20 @@ Built forward. Tracked clearly. Newest first.
 
 ---
 
+## 0.6.0 — 2026-08-25
+
+- Choose an icon from any icon pack already installed on the phone (Delta, Redline, MBE Style, MaterialOS,
+  Skyline, and any other pack that follows the standard icon-pack format) for any tile — same idea as Pie
+  Launcher's icon-pack support, no pack-specific code needed. A chosen icon overrides the name/app-icon
+  display regardless of the "app icons instead of name" setting, and is fully resettable back to the app's
+  own icon.
+- SNAP MODE: a new tile-drag mode alongside Free Position Mode — drag a tile anywhere and it snaps to
+  whichever slot is closest when released, instead of needing to land precisely on a tile's hitbox.
+- Animated wallpapers (Neuro Links, Server Grid, Cipher Scroll, ...) can now be tinted any color from
+  Background > Source, not just left white.
+- The wallpaper color picker is now a compact popup opened from a single row, instead of a swatch grid
+  that required scrolling to reach.
+
 ## 0.5.0 — 2026-08-25
 
 - COUNT is now a hard limit: exactly that many tiles are ever on screen, always. Dragging a tile
