@@ -47,6 +47,8 @@ fun TilePreviewCluster(
     showAndroidWallpaper: Boolean,
     wallpaperBitmap: ImageBitmap?,
     backgroundOpacity: Float,
+    backgroundIntensity: Float = 1f,
+    backgroundEffectSize: Float = 1f,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
@@ -59,7 +61,13 @@ fun TilePreviewCluster(
                 .background(LaunColors.bg)
         ) {
             if (backgroundAnimationKind >= 0) {
-                AnimatedWallpaper(kind = backgroundAnimationKind, opacity = backgroundOpacity, modifier = Modifier.fillMaxWidth().height(150.dp))
+                AnimatedWallpaper(
+                    kind = backgroundAnimationKind,
+                    opacity = backgroundOpacity,
+                    intensity = backgroundIntensity,
+                    sizeScale = backgroundEffectSize,
+                    modifier = Modifier.fillMaxWidth().height(150.dp)
+                )
             } else if (showAndroidWallpaper && wallpaperBitmap != null) {
                 Image(
                     bitmap = wallpaperBitmap,

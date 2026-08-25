@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -47,6 +48,7 @@ import com.eversorhn.laun.data.MAX_HEX_COUNT
 import com.eversorhn.laun.data.REVEAL_ANIMATIONS
 import com.eversorhn.laun.ui.theme.LaunColors
 import com.eversorhn.laun.ui.theme.MonoFontFamily
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /** Picker previews always animate at this speed, independent of the live ANIMATION SPEED
@@ -67,6 +69,12 @@ fun SettingsSheet(
     hexCount: Int,
     onHexCountChange: (Int) -> Unit,
     didShrinkToFit: Boolean,
+    freeTilePlacement: Boolean,
+    onFreeTilePlacementChange: (Boolean) -> Unit,
+    freePositionMode: Boolean,
+    onFreePositionModeChange: (Boolean) -> Unit,
+    colorMenuAutoOpenSeconds: Int,
+    onColorMenuAutoOpenSecondsChange: (Int) -> Unit,
     hudVisible: Boolean,
     onHudVisibleChange: (Boolean) -> Unit,
     hudShowStatus: Boolean,
@@ -89,6 +97,8 @@ fun SettingsSheet(
     onHudShowCursorChange: (Boolean) -> Unit,
     immersiveEnabled: Boolean,
     onImmersiveEnabledChange: (Boolean) -> Unit,
+    alwaysShowGrid: Boolean,
+    onAlwaysShowGridChange: (Boolean) -> Unit,
     showAppIcons: Boolean,
     onShowAppIconsChange: (Boolean) -> Unit,
     iconSizePercent: Int,
@@ -103,9 +113,14 @@ fun SettingsSheet(
     onBackgroundAnimationChange: (Int) -> Unit,
     backgroundOpacity: Int,
     onBackgroundOpacityChange: (Int) -> Unit,
+    backgroundIntensity: Int,
+    onBackgroundIntensityChange: (Int) -> Unit,
+    backgroundEffectSize: Int,
+    onBackgroundEffectSizeChange: (Int) -> Unit,
     slots: List<List<AppInfo>>,
     tileColors: Map<String, String>,
     wallpaperBitmap: ImageBitmap?,
+    onSetSystemWallpaperBlack: () -> Unit,
     onFaqClick: () -> Unit,
     onAboutClick: () -> Unit,
     onResetClick: () -> Unit,
@@ -237,6 +252,56 @@ fun SettingsSheet(
                 )
             }
 
+            // Interaction, not geometry — how touch on a tile resolves (drag freedom, how long a
+            // hold takes to open the color menu), as opposed to GRID above (what the layout itself
+            // looks like: tile size/count). Kept as its own section rather than folded into GRID —
+            // that reads as "the grid's own look," and gesture timing/reach isn't that.
+            SectionHeader(title = "TILE INTERACTION")
+            ToggleRow(
+                label = "FREE TILE PLACEMENT",
+                checked = freeTilePlacement,
+                onCheckedChange = onFreeTilePlacementChange,
+            )
+            if (freeTilePlacement) {
+                Text(
+                    text = "DRAG A TILE ANYWHERE ON SCREEN — DROPPING BEYOND COUNT PINS IT THERE INSTEAD OF GROWING COUNT",
+                    color = LaunColors.dim,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 9.sp,
+                    letterSpacing = 0.6.sp,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                )
+            }
+
+            ToggleRow(
+                label = "FREE POSITION MODE",
+                checked = freePositionMode,
+                onCheckedChange = onFreePositionModeChange,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            if (freePositionMode) {
+                Text(
+                    text = "DROP A TILE ANYWHERE — NO GRID, NO EDGE MARGIN. TILES STILL WON'T OVERLAP EACH OTHER. TAKES OVER FROM FREE TILE PLACEMENT ABOVE WHILE ON",
+                    color = LaunColors.dim,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 9.sp,
+                    letterSpacing = 0.6.sp,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                )
+            }
+
+            SettingRow(
+                label = "COLOR MENU DELAY",
+                value = if (colorMenuAutoOpenSeconds == 1) "1 SEC" else "$colorMenuAutoOpenSeconds SEC",
+                modifier = Modifier.padding(top = 10.dp)
+            ) {
+                CorpoSlider(
+                    value = colorMenuAutoOpenSeconds.toFloat(),
+                    onValueChange = { onColorMenuAutoOpenSecondsChange(it.toInt()) },
+                    valueRange = 1f..60f,
+                )
+            }
+
             SectionHeader(title = "APPEARANCE")
             ToggleRow(label = "APP ICONS INSTEAD OF NAME", checked = showAppIcons, onCheckedChange = onShowAppIconsChange)
             if (showAppIcons) {
@@ -296,6 +361,32 @@ fun SettingsSheet(
                     )
                 }
             }
+            // OLED BLACK is flat solid color — brightness/size controls don't apply to it, only
+            // to the other 8 animated concepts.
+            if (backgroundAnimation >= 0 && backgroundAnimation != BACKGROUND_ANIMATIONS.lastIndex) {
+                SettingRow(
+                    label = "INTENSITY",
+                    value = "$backgroundIntensity%",
+                    modifier = Modifier.padding(top = 10.dp)
+                ) {
+                    CorpoSlider(
+                        value = backgroundIntensity.toFloat(),
+                        onValueChange = { onBackgroundIntensityChange(it.toInt()) },
+                        valueRange = 50f..200f,
+                    )
+                }
+                SettingRow(
+                    label = "EFFECT SIZE",
+                    value = "$backgroundEffectSize%",
+                    modifier = Modifier.padding(top = 10.dp)
+                ) {
+                    CorpoSlider(
+                        value = backgroundEffectSize.toFloat(),
+                        onValueChange = { onBackgroundEffectSizeChange(it.toInt()) },
+                        valueRange = 50f..200f,
+                    )
+                }
+            }
 
             SectionHeader(title = "STATUS BAR")
             ToggleRow(label = "SHOW", checked = hudVisible, onCheckedChange = onHudVisibleChange)
@@ -313,6 +404,22 @@ fun SettingsSheet(
 
             SectionHeader(title = "SYSTEM")
             ToggleRow(label = "FULLSCREEN MODE", checked = immersiveEnabled, onCheckedChange = onImmersiveEnabledChange)
+            ToggleRow(
+                label = "ALWAYS SHOW GRID",
+                checked = alwaysShowGrid,
+                onCheckedChange = onAlwaysShowGridChange,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            if (alwaysShowGrid) {
+                Text(
+                    text = "TILES ARE SHOWN RIGHT AWAY, NO TAP TO OPEN. SET TILE REVEAL ABOVE TO NONE SO THEY APPEAR FIXED WITH NO ANIMATION EITHER",
+                    color = LaunColors.dim,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 9.sp,
+                    letterSpacing = 0.6.sp,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                )
+            }
             LinkRow(text = "FAQ", topPadding = 14.dp, onClick = onFaqClick)
             LinkRow(text = "ABOUT LAUNCHER", onClick = onAboutClick)
             LinkRow(text = "RESET TO DEFAULTS", onClick = onResetClick)
@@ -343,6 +450,8 @@ fun SettingsSheet(
                 showAndroidWallpaper = showWallpaper,
                 wallpaperBitmap = wallpaperBitmap,
                 backgroundOpacity = backgroundOpacity / 100f,
+                backgroundIntensity = backgroundIntensity / 100f,
+                backgroundEffectSize = backgroundEffectSize / 100f,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 16.dp)
@@ -367,7 +476,14 @@ fun SettingsSheet(
                 when (index) {
                     0 -> { onShowWallpaperChange(false); onBackgroundAnimationChange(-1) }
                     1 -> onShowWallpaperChange(true)
-                    else -> onBackgroundAnimationChange(index - 2)
+                    else -> {
+                        val animIndex = index - 2
+                        onBackgroundAnimationChange(animIndex)
+                        // Selecting OLED BLACK also sets it as the real system wallpaper — the
+                        // whole point of a true-black option is the OS-level power saving, which
+                        // only the actual wallpaper (not just our in-app canvas) can deliver.
+                        if (animIndex == BACKGROUND_ANIMATIONS.lastIndex) onSetSystemWallpaperBlack()
+                    }
                 }
             },
             onDismiss = { showBackgroundPicker = false },
@@ -388,6 +504,8 @@ fun SettingsSheet(
                 showAndroidWallpaper = showWallpaper,
                 wallpaperBitmap = wallpaperBitmap,
                 backgroundOpacity = backgroundOpacity / 100f,
+                backgroundIntensity = backgroundIntensity / 100f,
+                backgroundEffectSize = backgroundEffectSize / 100f,
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
             )
         }
@@ -399,7 +517,7 @@ fun SettingsSheet(
  * bar-shaped thumb, no pill shapes or rounded caps like Material3's default Slider.
  */
 @Composable
-private fun CorpoSlider(
+internal fun CorpoSlider(
     value: Float,
     onValueChange: (Float) -> Unit,
     valueRange: ClosedFloatingPointRange<Float>,
@@ -424,18 +542,41 @@ private fun CorpoSlider(
             .onSizeChanged { widthPx = it.width.toFloat() }
             .pointerInput(valueRange, steps) {
                 awaitEachGesture {
-                    val down = awaitFirstDown()
+                    val down = awaitFirstDown(requireUnconsumed = false)
                     fun updateFromX(x: Float) {
                         if (widthPx <= 0f) return
                         val fraction = (x / widthPx).coerceIn(0f, 1f)
                         onValueChange(snap(valueRange.start + fraction * (valueRange.endInclusive - valueRange.start)))
                     }
-                    updateFromX(down.position.x)
+                    // Don't move the slider on down alone — inside a scrolling menu, a finger
+                    // that lands on a slider but is actually scrolling vertically must not snap
+                    // the value. Only commit once movement is clearly horizontal (past touch
+                    // slop); a genuine tap with no real movement still jumps to that position.
+                    val touchSlop = viewConfiguration.touchSlop
+                    var dragging = false
+                    var scrolling = false
+                    var totalDx = 0f
+                    var totalDy = 0f
                     while (true) {
                         val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull() ?: break
-                        updateFromX(change.position.x)
-                        if (change.changedToUp()) break
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!dragging && !scrolling) {
+                            val delta = change.positionChange()
+                            totalDx += delta.x
+                            totalDy += delta.y
+                            if (abs(totalDx) > touchSlop || abs(totalDy) > touchSlop) {
+                                if (abs(totalDx) > abs(totalDy)) dragging = true else scrolling = true
+                            }
+                        }
+                        if (dragging) {
+                            change.consume()
+                            updateFromX(change.position.x)
+                        }
+                        if (change.changedToUp()) {
+                            if (!dragging && !scrolling) updateFromX(change.position.x)
+                            break
+                        }
+                        if (!change.pressed) break
                     }
                 }
             }

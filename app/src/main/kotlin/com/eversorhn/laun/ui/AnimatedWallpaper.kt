@@ -41,8 +41,16 @@ import kotlin.random.Random
  * behind the grid regardless of how many tiles are on screen.
  */
 @Composable
-fun AnimatedWallpaper(kind: Int, opacity: Float = 1f, modifier: Modifier = Modifier) {
-    if (kind !in 0..7) return
+fun AnimatedWallpaper(
+    kind: Int,
+    opacity: Float = 1f,
+    /** 0.5..2 — brightness of the effect's own elements, independent of [opacity]'s overall dim. */
+    intensity: Float = 1f,
+    /** 0.5..2 — visual size of the effect's particles/lines/shards. */
+    sizeScale: Float = 1f,
+    modifier: Modifier = Modifier
+) {
+    if (kind !in 0..8) return
 
     var frameTimeMs by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(Unit) {
@@ -64,15 +72,18 @@ fun AnimatedWallpaper(kind: Int, opacity: Float = 1f, modifier: Modifier = Modif
 
     Canvas(modifier = modifier.fillMaxSize().alpha(opacity.coerceIn(0f, 1f))) {
         val t = frameTimeMs
+        val i = intensity.coerceIn(0.5f, 2f)
+        val s = sizeScale.coerceIn(0.5f, 2f)
         when (kind) {
-            0 -> drawNeuroLinks(neuro, t)
-            1 -> drawCircuitTrace(circuit, t)
-            2 -> drawWarpTunnel(t)
-            3 -> drawServerGrid(server, t)
-            4 -> drawThreatMap(threat, t)
-            5 -> drawShardDrift(shards, t)
-            6 -> drawCipherScroll(cipher, t, textMeasurer)
-            7 -> drawStarfieldFlythrough(stars)
+            0 -> drawNeuroLinks(neuro, t, i, s)
+            1 -> drawCircuitTrace(circuit, t, i, s)
+            2 -> drawWarpTunnel(t, i, s)
+            3 -> drawServerGrid(server, t, i, s)
+            4 -> drawThreatMap(threat, t, i, s)
+            5 -> drawShardDrift(shards, t, i, s)
+            6 -> drawCipherScroll(cipher, t, textMeasurer, i, s)
+            7 -> drawStarfieldFlythrough(stars, i, s)
+            8 -> drawRect(Color.Black, size = size)
         }
     }
 }
@@ -88,7 +99,7 @@ private class NeuroLinksState {
     var lastH = -1f
 }
 
-private fun DrawScope.drawNeuroLinks(state: NeuroLinksState, @Suppress("UNUSED_PARAMETER") tMs: Float) {
+private fun DrawScope.drawNeuroLinks(state: NeuroLinksState, @Suppress("UNUSED_PARAMETER") tMs: Float, intensity: Float, sizeScale: Float) {
     val w = size.width
     val h = size.height
     if (state.nodes.isEmpty() || state.lastW != w || state.lastH != h) {
@@ -105,21 +116,22 @@ private fun DrawScope.drawNeuroLinks(state: NeuroLinksState, @Suppress("UNUSED_P
         if (n[0] < 0f || n[0] > w) n[2] *= -1f
         if (n[1] < 0f || n[1] > h) n[3] *= -1f
     }
+    val linkDist = 160f * sizeScale
     for (i in nodes.indices) {
         for (j in i + 1 until nodes.size) {
             val a = nodes[i]
             val b = nodes[j]
             val dist = hypot(a[0] - b[0], a[1] - b[1])
-            if (dist < 160f) {
+            if (dist < linkDist) {
                 drawLine(
-                    Color.White.copy(alpha = (1f - dist / 160f) * 0.22f),
-                    Offset(a[0], a[1]), Offset(b[0], b[1]), strokeWidth = 1f
+                    Color.White.copy(alpha = ((1f - dist / linkDist) * 0.22f * intensity).coerceIn(0f, 1f)),
+                    Offset(a[0], a[1]), Offset(b[0], b[1]), strokeWidth = 1f * sizeScale
                 )
             }
         }
     }
     for (n in nodes) {
-        drawCircle(Color.White.copy(alpha = .6f), radius = 1.6f, center = Offset(n[0], n[1]))
+        drawCircle(Color.White.copy(alpha = (.6f * intensity).coerceIn(0f, 1f)), radius = 1.6f * sizeScale, center = Offset(n[0], n[1]))
     }
 }
 
@@ -132,7 +144,7 @@ private class CircuitTraceState {
     var lastH = -1f
 }
 
-private fun DrawScope.drawCircuitTrace(state: CircuitTraceState, tMs: Float) {
+private fun DrawScope.drawCircuitTrace(state: CircuitTraceState, tMs: Float, intensity: Float, sizeScale: Float) {
     val w = size.width
     val h = size.height
     if (state.paths.isEmpty() || state.lastW != w || state.lastH != h) {
@@ -160,7 +172,7 @@ private fun DrawScope.drawCircuitTrace(state: CircuitTraceState, tMs: Float) {
         val path = Path().apply {
             p.pts.forEachIndexed { i, pt -> if (i == 0) moveTo(pt.x, pt.y) else lineTo(pt.x, pt.y) }
         }
-        drawPath(path, Color.White.copy(alpha = .14f), style = Stroke(width = 1f))
+        drawPath(path, Color.White.copy(alpha = (.14f * intensity).coerceIn(0f, 1f)), style = Stroke(width = 1f * sizeScale))
 
         var total = 0f
         val starts = ArrayList<Float>(p.pts.size)
@@ -180,16 +192,16 @@ private fun DrawScope.drawCircuitTrace(state: CircuitTraceState, tMs: Float) {
         val localT = if (len > 0f) (pos - starts[idx]) / len else 0f
         val px = a.x + (b.x - a.x) * localT
         val py = a.y + (b.y - a.y) * localT
-        drawCircle(Color.White.copy(alpha = .95f), radius = 2.2f, center = Offset(px, py))
+        drawCircle(Color.White.copy(alpha = (.95f * intensity).coerceIn(0f, 1f)), radius = 2.2f * sizeScale, center = Offset(px, py))
     }
 }
 
 // ============================================================ 3. WARP TUNNEL ============================================================
 
-private fun DrawScope.drawWarpTunnel(tMs: Float) {
+private fun DrawScope.drawWarpTunnel(tMs: Float, intensity: Float, sizeScale: Float) {
     val cx = size.width / 2f
     val cy = size.height / 2f
-    val maxR = hypot(size.width, size.height) / 2f * 1.6f
+    val maxR = hypot(size.width, size.height) / 2f * 1.6f * sizeScale
     val rotationDeg = (tMs * 0.012f) % 360f
     val zoom = 1f + 0.4f * ((sin(tMs * 0.0012f) + 1f) / 2f)
     val lines = 40
@@ -201,10 +213,10 @@ private fun DrawScope.drawWarpTunnel(tMs: Float) {
         val cosA = cos(rad)
         val sinA = sin(rad)
         drawLine(
-            Color.White.copy(alpha = .16f),
+            Color.White.copy(alpha = (.16f * intensity).coerceIn(0f, 1f)),
             Offset(cx + cosA * innerR, cy + sinA * innerR),
             Offset(cx + cosA * outerR, cy + sinA * outerR),
-            strokeWidth = 1.4f
+            strokeWidth = 1.4f * sizeScale
         )
     }
 }
@@ -218,7 +230,7 @@ private class ServerGridState {
     var rows = 10
 }
 
-private fun DrawScope.drawServerGrid(state: ServerGridState, tMs: Float) {
+private fun DrawScope.drawServerGrid(state: ServerGridState, tMs: Float, intensity: Float, sizeScale: Float) {
     if (state.cells.isEmpty()) {
         state.cells = buildList {
             for (r in 0 until state.rows) for (c in 0 until state.cols) {
@@ -232,7 +244,7 @@ private fun DrawScope.drawServerGrid(state: ServerGridState, tMs: Float) {
     val h = size.height
     val gridW = w * (1f - paddingFrac * 2f)
     val gridH = h * (1f - paddingFrac * 2f)
-    val gap = 6f
+    val gap = 6f * sizeScale
     val cellW = (gridW - gap * (state.cols - 1)) / state.cols
     val cellH = (gridH - gap * (state.rows - 1)) / state.rows
     val offX = w * paddingFrac
@@ -243,7 +255,7 @@ private fun DrawScope.drawServerGrid(state: ServerGridState, tMs: Float) {
         val y = offY + cell.row * (cellH + gap)
         val color = if (cell.on) {
             val phase = ((tMs + cell.phase) % cell.durationMs) / cell.durationMs
-            val pulse = (sin(phase * 2f * PI.toFloat()) + 1f) / 2f
+            val pulse = ((sin(phase * 2f * PI.toFloat()) + 1f) / 2f * intensity).coerceIn(0f, 1f)
             lerp(off, Color.White, pulse)
         } else off
         drawRect(color, topLeft = Offset(x, y), size = Size(cellW, cellH))
@@ -261,7 +273,7 @@ private class ThreatMapState {
     var lastH = -1f
 }
 
-private fun DrawScope.drawThreatMap(state: ThreatMapState, tMs: Float) {
+private fun DrawScope.drawThreatMap(state: ThreatMapState, tMs: Float, intensity: Float, sizeScale: Float) {
     val w = size.width
     val h = size.height
     if (state.points.isEmpty() || state.lastW != w || state.lastH != h) {
@@ -275,7 +287,7 @@ private fun DrawScope.drawThreatMap(state: ThreatMapState, tMs: Float) {
         state.pings.clear()
         state.nextPing = tMs
     }
-    state.points.forEach { p -> drawCircle(Color.White.copy(alpha = .28f), radius = 1.4f, center = p) }
+    state.points.forEach { p -> drawCircle(Color.White.copy(alpha = (.28f * intensity).coerceIn(0f, 1f)), radius = 1.4f * sizeScale, center = p) }
     if (tMs > state.nextPing && state.points.isNotEmpty()) {
         val p = state.points[Random.nextInt(state.points.size)]
         state.pings.add(Ping(p.x, p.y, tMs))
@@ -285,12 +297,12 @@ private fun DrawScope.drawThreatMap(state: ThreatMapState, tMs: Float) {
     state.pings.forEach { pg ->
         val prog = (tMs - pg.start) / 1200f
         drawCircle(
-            Color.White.copy(alpha = ((1f - prog) * 0.55f).coerceIn(0f, 1f)),
-            radius = (prog * 70f).coerceAtLeast(0.1f),
+            Color.White.copy(alpha = ((1f - prog) * 0.55f * intensity).coerceIn(0f, 1f)),
+            radius = (prog * 70f * sizeScale).coerceAtLeast(0.1f),
             center = Offset(pg.x, pg.y),
-            style = Stroke(width = 1.5f)
+            style = Stroke(width = 1.5f * sizeScale)
         )
-        drawCircle(Color.White.copy(alpha = ((1f - prog) * 0.85f).coerceIn(0f, 1f)), radius = 2f, center = Offset(pg.x, pg.y))
+        drawCircle(Color.White.copy(alpha = ((1f - prog) * 0.85f * intensity).coerceIn(0f, 1f)), radius = 2f * sizeScale, center = Offset(pg.x, pg.y))
     }
 }
 
@@ -301,7 +313,7 @@ private class ShardDriftState {
     var shards: List<Shard> = emptyList()
 }
 
-private fun DrawScope.drawShardDrift(state: ShardDriftState, tMs: Float) {
+private fun DrawScope.drawShardDrift(state: ShardDriftState, tMs: Float, intensity: Float, sizeScale: Float) {
     if (state.shards.isEmpty()) {
         state.shards = List(16) {
             Shard(Random.nextFloat(), 8f + Random.nextFloat() * 14f, (9f + Random.nextFloat() * 10f) * 1000f, Random.nextFloat() * 18000f)
@@ -312,14 +324,14 @@ private fun DrawScope.drawShardDrift(state: ShardDriftState, tMs: Float) {
     state.shards.forEach { s ->
         val localT = ((tMs + s.phaseMs) % s.durationMs) / s.durationMs
         val y = h - localT * (h * 1.12f + 40f)
-        val alpha = when {
+        val alpha = (when {
             localT < 0.1f -> localT / 0.1f
             localT > 0.9f -> (1f - localT) / 0.1f
             else -> 1f
-        }.coerceIn(0f, 1f) * 0.55f
+        }.coerceIn(0f, 1f) * 0.55f * intensity).coerceIn(0f, 1f)
         val x = s.xFrac * w
         rotate(localT * 180f, pivot = Offset(x, y)) {
-            drawHexShard(Offset(x, y), s.sizePx, Color.White.copy(alpha = alpha))
+            drawHexShard(Offset(x, y), s.sizePx * sizeScale, Color.White.copy(alpha = alpha))
         }
     }
 }
@@ -354,15 +366,17 @@ private class CipherScrollState {
     var rows: List<CipherRowState> = emptyList()
     var lastW = -1f
     var lastH = -1f
+    var lastSizeScale = -1f
 }
 
-private fun DrawScope.drawCipherScroll(state: CipherScrollState, tMs: Float, textMeasurer: TextMeasurer) {
+private fun DrawScope.drawCipherScroll(state: CipherScrollState, tMs: Float, textMeasurer: TextMeasurer, @Suppress("UNUSED_PARAMETER") intensity: Float, sizeScale: Float) {
     val w = size.width
     val h = size.height
-    if (state.rows.isEmpty() || state.lastW != w || state.lastH != h) {
+    if (state.rows.isEmpty() || state.lastW != w || state.lastH != h || state.lastSizeScale != sizeScale) {
         state.lastW = w
         state.lastH = h
-        val style = TextStyle(fontFamily = MonoFontFamily, fontSize = 11.sp, color = Color.White)
+        state.lastSizeScale = sizeScale
+        val style = TextStyle(fontFamily = MonoFontFamily, fontSize = (11f * sizeScale).sp, color = Color.White)
         val probe = textMeasurer.measure(AnnotatedString("0"), style)
         val lineHeightPx = probe.size.height.toFloat().coerceAtLeast(1f)
         val rowCount = kotlin.math.ceil(h / lineHeightPx).toInt() + 1
@@ -398,7 +412,7 @@ private class StarfieldState {
     var lastH = -1f
 }
 
-private fun DrawScope.drawStarfieldFlythrough(state: StarfieldState) {
+private fun DrawScope.drawStarfieldFlythrough(state: StarfieldState, intensity: Float, sizeScale: Float) {
     val w = size.width
     val h = size.height
     val cx = w / 2f
@@ -425,8 +439,8 @@ private fun DrawScope.drawStarfieldFlythrough(state: StarfieldState) {
         }
         val x = cx + cos(s.angle) * s.dist
         val y = cy + sin(s.angle) * s.dist
-        val alpha = (0.15f + progress * 0.75f).coerceIn(0f, 0.9f)
-        val r = 0.5f + progress * 2.2f
+        val alpha = ((0.15f + progress * 0.75f) * intensity).coerceIn(0f, 1f)
+        val r = (0.5f + progress * 2.2f) * sizeScale
         drawCircle(Color.White.copy(alpha = alpha), radius = r, center = Offset(x, y))
     }
 }

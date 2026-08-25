@@ -4,6 +4,34 @@ Built forward. Tracked clearly. Newest first.
 
 ---
 
+## 0.4.0 — 2026-08-25
+
+- Free Position Mode: drop a tile anywhere on screen, no grid snapping and no edge
+  margin — tiles still push apart from each other automatically. Independent of the
+  existing Free Tile Placement, and takes over from it while on.
+- Per-tile size: a SIZE slider (and Reset Size) in the tile color menu lets any tile
+  be scaled 50–200% on its own, with its label/icon text scaling to match.
+- Long-press an app in the search picker to rename it (24 characters, shown on the
+  tile and in folders) — Reset clears the override back to its real name.
+- Color menu now also opens on its own after you hold a tile for a set time, with
+  the delay (1–60s) configurable in Settings, instead of only firing on release.
+- ALWAYS SHOW GRID: skip the empty tap-to-open screen entirely and always show the
+  tiles — pair with Tile Reveal set to None for tiles that are just always there.
+- The real Android system wallpaper is now automatically set to solid black
+  whenever no wallpaper is shown in-app, so switching to another app never flashes
+  the phone's actual wallpaper behind LAUNCHER. OLED BLACK background option added
+  alongside the existing animated backgrounds, and Neuro Links' brightness/effect
+  size are now adjustable instead of capped too dim.
+- Settings reorganized: a new TILE INTERACTION section groups Free Tile Placement,
+  Free Position Mode and Color Menu Delay, separate from pure grid geometry.
+- Several real bugs fixed: dragging a tile could silently duplicate it; sliders
+  could jump to a new value just from touching them while scrolling past; a tile
+  moved off the hex grid in Free Position Mode could render clipped behind
+  neighboring empty tiles; Reset to Defaults missed two of the newer settings;
+  the WhatsApp-style color picker silently did nothing for tiles hidden beyond
+  the current tile count; apps assigned to a hidden pinned tile could become
+  permanently unreachable from the app picker.
+
 ## 0.3.0 — 2026-08-25
 
 - App default language is now English (was hardcoded German throughout).

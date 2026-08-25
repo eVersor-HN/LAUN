@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -41,6 +42,9 @@ import com.eversorhn.laun.ui.theme.TILE_COLOR_PALETTE
 fun ColorPickerSheet(
     anchor: Offset,
     slotApps: List<AppInfo>,
+    sizePercent: Int,
+    onSizeChange: (Int) -> Unit,
+    onResetSize: () -> Unit,
     onPick: (String) -> Unit,
     onReset: () -> Unit,
     onEditApps: () -> Unit,
@@ -98,6 +102,32 @@ fun ColorPickerSheet(
                 }
             }
             ActionRow(text = "RESET COLOR", onClick = onReset)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "SIZE",
+                    color = LaunColors.dim,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 9.5.sp,
+                    letterSpacing = 1.sp
+                )
+                Text(
+                    text = "$sizePercent%",
+                    color = LaunColors.fg,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 9.5.sp,
+                    letterSpacing = 1.sp
+                )
+            }
+            CorpoSlider(
+                value = sizePercent.toFloat(),
+                onValueChange = { onSizeChange(it.toInt()) },
+                valueRange = 50f..200f,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            ActionRow(text = "RESET SIZE", onClick = onResetSize)
             if (singleApp != null) {
                 ActionRow(text = "APP INFO", onClick = {
                     context.startActivity(

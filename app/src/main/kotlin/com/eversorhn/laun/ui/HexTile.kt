@@ -231,11 +231,6 @@ internal fun HexTile(
                     scaleX = s
                     scaleY = s
                     rotationZ = mainRotation(revealAnimation, isOpen, progress.value)
-                    if (isDragging) {
-                        shadowElevation = 24f
-                        ambientShadowColor = LaunColors.fg
-                        spotShadowColor = LaunColors.fg
-                    }
                 }
                 .clip(HexShape)
                 .background(ringColor)
@@ -249,6 +244,11 @@ internal fun HexTile(
         ) {
             val app = tile.apps.singleOrNull()
             val isFolder = tile.apps.size > 1
+            // Text was tuned at the default 100dp tile size — scaling it by how far this tile's
+            // actual width sits from that baseline keeps the label proportionate whether it's the
+            // shared SIZE setting or a per-tile override (see the color menu's own SIZE slider)
+            // that made this particular tile bigger or smaller than the rest.
+            val textScale = (tile.widthDp / 100.dp).coerceIn(0.4f, 2.5f)
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -295,7 +295,7 @@ internal fun HexTile(
                             text = app.label,
                             color = LaunColors.fg,
                             fontFamily = HeadFontFamily,
-                            fontSize = 10.5.sp,
+                            fontSize = 10.5.sp * textScale,
                             textAlign = TextAlign.Center,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
@@ -304,7 +304,7 @@ internal fun HexTile(
                             text = tile.apps.first().label,
                             color = LaunColors.fg,
                             fontFamily = HeadFontFamily,
-                            fontSize = 10.5.sp,
+                            fontSize = 10.5.sp * textScale,
                             textAlign = TextAlign.Center,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
@@ -313,7 +313,7 @@ internal fun HexTile(
                             text = "+",
                             color = LaunColors.dim,
                             fontFamily = HeadFontFamily,
-                            fontSize = 15.sp
+                            fontSize = 15.sp * textScale
                         )
                     }
                 }
@@ -323,14 +323,14 @@ internal fun HexTile(
                     text = if (isFolder) "FOLDER" else hexTag(app!!.packageName),
                     color = LaunColors.dim,
                     fontFamily = MonoFontFamily,
-                    fontSize = 8.sp,
+                    fontSize = 8.sp * textScale,
                     letterSpacing = 0.8.sp,
                     maxLines = 1,
                     softWrap = false,
                     overflow = TextOverflow.Clip,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(top = 22.dp)
+                        .padding(top = 22.dp * textScale)
                 )
             }
             if (revealAnimation == ANIM_VOLTAGE_SURGE) {

@@ -44,12 +44,50 @@ data class LauncherSettings(
     val backgroundAnimation: Int = -1,
     /** 0..100 — applies to whichever background is active (animated concept or real wallpaper). */
     val backgroundOpacity: Int = 100,
+    /** 50..200% — brightness of the animated background's own elements (lines/nodes/particles),
+     *  independent of [backgroundOpacity]'s overall dimming. Only applies to animated backgrounds. */
+    val backgroundIntensity: Int = 100,
+    /** 50..200% — visual size of the animated background's elements (particles/lines/shards).
+     *  Only applies to animated backgrounds. */
+    val backgroundEffectSize: Int = 100,
     val hasShownDefaultLauncherHint: Boolean = false,
     val hasShownGestureHint: Boolean = false,
     val tileColors: Map<String, String> = emptyMap(),
     /** One or more packages per slot — one is a normal tile, more than one is a folder tile. */
-    val slotApps: Map<Int, List<String>> = emptyMap()
+    val slotApps: Map<Int, List<String>> = emptyMap(),
+    /** When on, manually dragging a tile can target any free cell anywhere on screen, and dropping
+     *  it beyond COUNT pins it there directly instead of growing COUNT to include everything closer
+     *  to center in between. Off by default — a small, cluster-adjacent set of drop targets is the
+     *  safer default so an imprecise drag can't jump COUNT far past what was intended. */
+    val freeTilePlacement: Boolean = false,
+    /** Per-app display name overrides, set via long-press-to-rename in the app picker — the tile,
+     *  the picker list, and folders all show this instead of the app's real label once set. */
+    val customAppNames: Map<String, String> = emptyMap(),
+    /** When on, dragging a tile drops it at the exact pixel position released — no snapping to the
+     *  honeycomb grid, no inset from the screen edge. Tiles still can't be dropped close enough to
+     *  overlap each other (see HexGrid's free-position collision resolution) — that's the one thing
+     *  that stays enforced even in this mode. Independent of [freeTilePlacement], which only
+     *  affects how far the hex-grid-based drag targets reach; this replaces that whole model
+     *  outright while on. */
+    val freePositionMode: Boolean = false,
+    /** Explicit (x, y) in dp, top-left origin — only consulted while [freePositionMode] is on;
+     *  a slot with no entry here still renders at its normal honeycomb position until dragged. */
+    val freeformPositions: Map<Int, Pair<Float, Float>> = emptyMap(),
+    /** Seconds of holding still on a tile before its color menu opens by itself — 1..60. */
+    val colorMenuAutoOpenSeconds: Int = 1,
+    /** Per-slot size override as a percent of the global SIZE setting — 50..200. A slot with no
+     *  entry here renders at the normal, shared tile size. Set via the tile color menu's own SIZE
+     *  slider, independent of position — resizing doesn't move the tile or its neighbors. */
+    val tileSizeOverrides: Map<Int, Int> = emptyMap(),
+    /** When on, the hex grid is shown immediately on launch/resume instead of the empty STANDBY
+     *  screen that normally needs a tap to reveal it — the grid simply never collapses. Combine
+     *  with [revealAnimation] = -1 for tiles that are just always there, no tap and no animation. */
+    val alwaysShowGrid: Boolean = false
 )
+
+/** Rename is meant to shorten a label for a tile, not hold a paragraph — also keeps the picker
+ *  list and folder rows from wrapping awkwardly. */
+const val MAX_CUSTOM_APP_NAME_LENGTH = 24
 
 /** Selectable tile reveal/close animations — index into this list is what's persisted. */
 val REVEAL_ANIMATIONS = listOf("VOLTAGE SURGE", "SIGNAL LOCK-ON", "DATA PACKET PING", "SERVO LOCK ROTATE", "QUANTUM FLICKER")
@@ -57,7 +95,7 @@ val REVEAL_ANIMATIONS = listOf("VOLTAGE SURGE", "SIGNAL LOCK-ON", "DATA PACKET P
 /** Selectable animated backgrounds, rendered behind the grid — index into this list is persisted. */
 val BACKGROUND_ANIMATIONS = listOf(
     "NEURO LINKS", "CIRCUIT TRACE", "WARP TUNNEL", "SERVER GRID",
-    "THREAT PING MAP", "SHARD DRIFT", "CIPHER SCROLL", "STARFIELD DRIFT"
+    "THREAT PING MAP", "SHARD DRIFT", "CIPHER SCROLL", "STARFIELD DRIFT", "OLED BLACK"
 )
 
 /**
@@ -90,10 +128,19 @@ class LauncherPrefs(private val context: Context) {
         val SHOW_WALLPAPER = booleanPreferencesKey("show_wallpaper")
         val BACKGROUND_ANIMATION = intPreferencesKey("background_animation")
         val BACKGROUND_OPACITY = intPreferencesKey("background_opacity")
+        val BACKGROUND_INTENSITY = intPreferencesKey("background_intensity")
+        val BACKGROUND_EFFECT_SIZE = intPreferencesKey("background_effect_size")
         val HAS_SHOWN_DEFAULT_LAUNCHER_HINT = booleanPreferencesKey("has_shown_default_launcher_hint")
         val HAS_SHOWN_GESTURE_HINT = booleanPreferencesKey("has_shown_gesture_hint")
         val TILE_COLORS = stringSetPreferencesKey("tile_colors")
         val SLOT_APPS = stringSetPreferencesKey("slot_apps")
+        val FREE_TILE_PLACEMENT = booleanPreferencesKey("free_tile_placement")
+        val CUSTOM_APP_NAMES = stringSetPreferencesKey("custom_app_names")
+        val FREE_POSITION_MODE = booleanPreferencesKey("free_position_mode")
+        val FREEFORM_POSITIONS = stringSetPreferencesKey("freeform_positions")
+        val COLOR_MENU_AUTO_OPEN_SECONDS = intPreferencesKey("color_menu_auto_open_seconds")
+        val TILE_SIZE_OVERRIDES = stringSetPreferencesKey("tile_size_overrides")
+        val ALWAYS_SHOW_GRID = booleanPreferencesKey("always_show_grid")
     }
 
     val settings: Flow<LauncherSettings> = context.dataStore.data.map { prefs ->
@@ -122,6 +169,8 @@ class LauncherPrefs(private val context: Context) {
                 if (it in BACKGROUND_ANIMATIONS.indices) it else -1
             },
             backgroundOpacity = (prefs[Keys.BACKGROUND_OPACITY] ?: 100).coerceIn(0, 100),
+            backgroundIntensity = (prefs[Keys.BACKGROUND_INTENSITY] ?: 100).coerceIn(50, 200),
+            backgroundEffectSize = (prefs[Keys.BACKGROUND_EFFECT_SIZE] ?: 100).coerceIn(50, 200),
             hasShownDefaultLauncherHint = prefs[Keys.HAS_SHOWN_DEFAULT_LAUNCHER_HINT] ?: false,
             hasShownGestureHint = prefs[Keys.HAS_SHOWN_GESTURE_HINT] ?: false,
             tileColors = (prefs[Keys.TILE_COLORS] ?: emptySet())
@@ -137,7 +186,36 @@ class LauncherPrefs(private val context: Context) {
                     val i = entry.indexOf('|')
                     if (i < 0) null else entry.substring(0, i).toIntOrNull()?.let { it to entry.substring(i + 1) }
                 }
-                .groupBy({ it.first }, { it.second })
+                .groupBy({ it.first }, { it.second }),
+            freeTilePlacement = prefs[Keys.FREE_TILE_PLACEMENT] ?: false,
+            customAppNames = (prefs[Keys.CUSTOM_APP_NAMES] ?: emptySet())
+                .mapNotNull { entry ->
+                    val i = entry.indexOf('|')
+                    if (i < 0) null else entry.substring(0, i) to entry.substring(i + 1)
+                }
+                .toMap(),
+            freePositionMode = prefs[Keys.FREE_POSITION_MODE] ?: false,
+            freeformPositions = (prefs[Keys.FREEFORM_POSITIONS] ?: emptySet())
+                .mapNotNull { entry ->
+                    val parts = entry.split('|')
+                    if (parts.size != 3) return@mapNotNull null
+                    val idx = parts[0].toIntOrNull() ?: return@mapNotNull null
+                    val x = parts[1].toFloatOrNull() ?: return@mapNotNull null
+                    val y = parts[2].toFloatOrNull() ?: return@mapNotNull null
+                    idx to (x to y)
+                }
+                .toMap(),
+            colorMenuAutoOpenSeconds = (prefs[Keys.COLOR_MENU_AUTO_OPEN_SECONDS] ?: 1).coerceIn(1, 60),
+            tileSizeOverrides = (prefs[Keys.TILE_SIZE_OVERRIDES] ?: emptySet())
+                .mapNotNull { entry ->
+                    val i = entry.indexOf('|')
+                    if (i < 0) return@mapNotNull null
+                    val idx = entry.substring(0, i).toIntOrNull() ?: return@mapNotNull null
+                    val percent = entry.substring(i + 1).toIntOrNull() ?: return@mapNotNull null
+                    idx to percent.coerceIn(50, 200)
+                }
+                .toMap(),
+            alwaysShowGrid = prefs[Keys.ALWAYS_SHOW_GRID] ?: false
         )
     }
 
@@ -228,6 +306,14 @@ class LauncherPrefs(private val context: Context) {
         context.dataStore.edit { it[Keys.BACKGROUND_OPACITY] = percent.coerceIn(0, 100) }
     }
 
+    suspend fun setBackgroundIntensity(percent: Int) {
+        context.dataStore.edit { it[Keys.BACKGROUND_INTENSITY] = percent.coerceIn(50, 200) }
+    }
+
+    suspend fun setBackgroundEffectSize(percent: Int) {
+        context.dataStore.edit { it[Keys.BACKGROUND_EFFECT_SIZE] = percent.coerceIn(50, 200) }
+    }
+
     suspend fun setHasShownDefaultLauncherHint(shown: Boolean) {
         context.dataStore.edit { it[Keys.HAS_SHOWN_DEFAULT_LAUNCHER_HINT] = shown }
     }
@@ -264,6 +350,12 @@ class LauncherPrefs(private val context: Context) {
             prefs[Keys.SHOW_WALLPAPER] = d.showWallpaper
             prefs[Keys.BACKGROUND_ANIMATION] = d.backgroundAnimation
             prefs[Keys.BACKGROUND_OPACITY] = d.backgroundOpacity
+            prefs[Keys.BACKGROUND_INTENSITY] = d.backgroundIntensity
+            prefs[Keys.BACKGROUND_EFFECT_SIZE] = d.backgroundEffectSize
+            prefs[Keys.FREE_TILE_PLACEMENT] = d.freeTilePlacement
+            prefs[Keys.FREE_POSITION_MODE] = d.freePositionMode
+            prefs[Keys.COLOR_MENU_AUTO_OPEN_SECONDS] = d.colorMenuAutoOpenSeconds
+            prefs[Keys.ALWAYS_SHOW_GRID] = d.alwaysShowGrid
         }
     }
 
@@ -277,11 +369,67 @@ class LauncherPrefs(private val context: Context) {
         }
     }
 
-    /** Replaces the full set of apps occupying a grid slot — an empty list clears it. */
+    /** Blank or null clears the override, reverting to the app's real label. */
+    suspend fun setCustomAppName(packageName: String, name: String?) {
+        val trimmed = name?.trim()?.take(MAX_CUSTOM_APP_NAME_LENGTH)
+        context.dataStore.edit { prefs ->
+            val current = (prefs[Keys.CUSTOM_APP_NAMES] ?: emptySet())
+                .filterNot { it.startsWith("$packageName|") }
+                .toMutableSet()
+            if (!trimmed.isNullOrEmpty()) current += "$packageName|$trimmed"
+            prefs[Keys.CUSTOM_APP_NAMES] = current
+        }
+    }
+
+    suspend fun setColorMenuAutoOpenSeconds(seconds: Int) {
+        context.dataStore.edit { it[Keys.COLOR_MENU_AUTO_OPEN_SECONDS] = seconds.coerceIn(1, 60) }
+    }
+
+    /** null clears the override, reverting the slot to the shared SIZE setting. */
+    suspend fun setTileSizeOverride(index: Int, percent: Int?) {
+        context.dataStore.edit { prefs ->
+            val current = (prefs[Keys.TILE_SIZE_OVERRIDES] ?: emptySet())
+                .filterNot { it.startsWith("$index|") }
+                .toMutableSet()
+            if (percent != null) current += "$index|${percent.coerceIn(50, 200)}"
+            prefs[Keys.TILE_SIZE_OVERRIDES] = current
+        }
+    }
+
+    suspend fun setFreePositionMode(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.FREE_POSITION_MODE] = enabled }
+    }
+
+    suspend fun setAlwaysShowGrid(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.ALWAYS_SHOW_GRID] = enabled }
+    }
+
+    suspend fun setFreeformPosition(index: Int, x: Float, y: Float) {
+        context.dataStore.edit { prefs ->
+            val current = (prefs[Keys.FREEFORM_POSITIONS] ?: emptySet())
+                .filterNot { it.startsWith("$index|") }
+                .toMutableSet()
+            current += "$index|$x|$y"
+            prefs[Keys.FREEFORM_POSITIONS] = current
+        }
+    }
+
+    suspend fun setFreeTilePlacement(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.FREE_TILE_PLACEMENT] = enabled }
+    }
+
+    /**
+     * Replaces the full set of apps occupying a grid slot — an empty list clears it.
+     * Also strips [packageNames] out of every OTHER slot first, since an app can only
+     * live in one slot at a time — otherwise a re-assigned app stays dangling in its old
+     * (possibly hidden/pinned) slot and renders as a duplicate tile.
+     */
     suspend fun setSlotApps(slotIndex: Int, packageNames: List<String>) {
         context.dataStore.edit { prefs ->
             val current = (prefs[Keys.SLOT_APPS] ?: emptySet())
-                .filterNot { it.startsWith("$slotIndex|") }
+                .filterNot { entry ->
+                    entry.startsWith("$slotIndex|") || entry.substringAfter("|") in packageNames
+                }
                 .toMutableSet()
             packageNames.forEach { pkg -> current += "$slotIndex|$pkg" }
             prefs[Keys.SLOT_APPS] = current

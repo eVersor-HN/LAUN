@@ -1,8 +1,10 @@
 package com.eversorhn.laun.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.eversorhn.laun.data.AppInfo
+import com.eversorhn.laun.data.MAX_CUSTOM_APP_NAME_LENGTH
 import com.eversorhn.laun.ui.theme.HeadFontFamily
 import com.eversorhn.laun.ui.theme.LaunColors
 import com.eversorhn.laun.ui.theme.MonoFontFamily
@@ -47,16 +50,20 @@ import com.eversorhn.laun.ui.theme.MonoFontFamily
  * Multi-select: picking one app makes a normal tile, picking more than one makes a folder tile —
  * taps toggle membership instead of closing immediately, confirmed with DONE.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AppPickerSheet(
     apps: List<AppInfo>,
     initiallySelected: Set<String>,
     immersiveEnabled: Boolean,
     onConfirm: (List<String>) -> Unit,
+    /** name == null (or blank) clears the override, reverting to the app's real label. */
+    onRenameApp: (packageName: String, name: String?) -> Unit,
     onDismiss: () -> Unit
 ) {
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf(initiallySelected) }
+    var renameTarget by remember { mutableStateOf<AppInfo?>(null) }
     val filtered = remember(apps, query) {
         if (query.isBlank()) apps else apps.filter { it.label.contains(query, ignoreCase = true) }
     }
@@ -147,9 +154,12 @@ fun AppPickerSheet(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable {
-                                    selected = if (isSelected) selected - app.packageName else selected + app.packageName
-                                }
+                                .combinedClickable(
+                                    onClick = {
+                                        selected = if (isSelected) selected - app.packageName else selected + app.packageName
+                                    },
+                                    onLongClick = { renameTarget = app }
+                                )
                                 .padding(horizontal = 20.dp, vertical = 14.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
@@ -178,6 +188,92 @@ fun AppPickerSheet(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    renameTarget?.let { app ->
+        var name by remember(app.packageName) { mutableStateOf(app.label) }
+        val renameFocusRequester = remember { FocusRequester() }
+        val renameKeyboard = LocalSoftwareKeyboardController.current
+        LaunchedEffect(app.packageName) {
+            renameFocusRequester.requestFocus()
+            renameKeyboard?.show()
+        }
+
+        Dialog(onDismissRequest = { renameTarget = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            HideSystemBarsWhileShown(immersiveEnabled)
+
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 320.dp)
+                    .background(LaunColors.bg2)
+                    .border(1.dp, LaunColors.border)
+                    .padding(20.dp)
+            ) {
+                Text(
+                    text = "RENAME TILE",
+                    color = LaunColors.dim,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 10.sp,
+                    letterSpacing = 1.sp
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 14.dp)
+                        .border(1.dp, LaunColors.border)
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                ) {
+                    BasicTextField(
+                        value = name,
+                        onValueChange = { if (it.length <= MAX_CUSTOM_APP_NAME_LENGTH) name = it },
+                        singleLine = true,
+                        textStyle = TextStyle(
+                            color = LaunColors.fg,
+                            fontFamily = HeadFontFamily,
+                            fontSize = 13.sp
+                        ),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(LaunColors.fg),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(renameFocusRequester)
+                    )
+                }
+                Text(
+                    text = "${name.length}/$MAX_CUSTOM_APP_NAME_LENGTH",
+                    color = LaunColors.dim,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 9.sp,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "RESET",
+                        color = LaunColors.dim,
+                        fontFamily = MonoFontFamily,
+                        fontSize = 10.sp,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.clickable {
+                            onRenameApp(app.packageName, null)
+                            renameTarget = null
+                        }
+                    )
+                    Text(
+                        text = "SAVE",
+                        color = LaunColors.fg,
+                        fontFamily = MonoFontFamily,
+                        fontSize = 10.sp,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.clickable {
+                            onRenameApp(app.packageName, name)
+                            renameTarget = null
+                        }
+                    )
                 }
             }
         }
