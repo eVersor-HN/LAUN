@@ -28,7 +28,9 @@ private val FAQ_ENTRIES = listOf(
     FaqEntry("HOW DO I ASSIGN AN APP TO A TILE?", "Open the grid, then tap an empty tile — the picker there has its own search field."),
     FaqEntry("HOW DO I CREATE A FOLDER?", "Select more than one app when assigning a tile."),
     FaqEntry("HOW DO I CHANGE A TILE'S COLOR, EDIT ITS APPS, OR CLEAR IT?", "Long-press an occupied tile."),
-    FaqEntry("HOW DO I MOVE A TILE?", "Long-press an occupied tile, then drag it onto another tile once it lifts — the two swap places."),
+    FaqEntry("HOW DO I MOVE A TILE?", "Long-press a tile, then drag it onto another once it lifts — the two swap places. SNAP MODE and FREE TILE PLACEMENT (Settings → TILE INTERACTION) make the drop more forgiving — landing near a slot is enough, or landing on empty space beyond your tiles instead of swapping with anything."),
+    FaqEntry("HOW DO I SEARCH FOR AND LAUNCH AN APP DIRECTLY?", "Swipe up anywhere on the home screen, open or closed."),
+    FaqEntry("HOW DO I RENAME AN APP?", "Long-press it in the app picker list."),
     FaqEntry("HOW DO I SET LAUNCHER AS MY DEFAULT HOME APP?", "Go to your phone's Settings → Apps → Default apps → Home app, and choose LAUNCHER.")
 )
 

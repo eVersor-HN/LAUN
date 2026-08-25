@@ -81,8 +81,24 @@ fun SettingsSheet(
     onFreePositionModeChange: (Boolean) -> Unit,
     snapMode: Boolean,
     onSnapModeChange: (Boolean) -> Unit,
+    freeTilePlacement: Boolean,
+    onFreeTilePlacementChange: (Boolean) -> Unit,
+    tileSpacingDp: Int,
+    onTileSpacingChange: (Int) -> Unit,
+    marginTopDp: Int,
+    onMarginTopChange: (Int) -> Unit,
+    marginBottomDp: Int,
+    onMarginBottomChange: (Int) -> Unit,
+    marginStartDp: Int,
+    onMarginStartChange: (Int) -> Unit,
+    marginEndDp: Int,
+    onMarginEndChange: (Int) -> Unit,
+    hideEmptyTiles: Boolean,
+    onHideEmptyTilesChange: (Boolean) -> Unit,
     colorMenuAutoOpenSeconds: Int,
     onColorMenuAutoOpenSecondsChange: (Int) -> Unit,
+    mainMenuAutoOpenSeconds: Int,
+    onMainMenuAutoOpenSecondsChange: (Int) -> Unit,
     hudVisible: Boolean,
     onHudVisibleChange: (Boolean) -> Unit,
     hudShowStatus: Boolean,
@@ -136,9 +152,10 @@ fun SettingsSheet(
     onResetClick: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    // Tapping SIZE/COUNT's label switches to a solo view showing just that one slider —
-    // the sheet then has almost no content, so it renders as a small bar instead of covering
-    // most of the screen, and the grid stays visible above while dragging.
+    // Tapping a slider's own label switches to a solo view showing just that one control — the
+    // sheet then has almost no content, so it renders as a small bar instead of covering most of
+    // the screen, and the grid stays visible above while dragging. Toggles don't need this: they
+    // resolve in one tap, not a drag you want to watch land.
     var soloControl by remember { mutableStateOf<String?>(null) }
 
     var showAnimationPicker by remember { mutableStateOf(false) }
@@ -186,24 +203,57 @@ fun SettingsSheet(
                         .padding(bottom = 14.dp)
                         .clickable { soloControl = null }
                 )
-                if (soloControl == "size") {
-                    SettingRow(label = "SIZE", value = "${hexSizeDp}dp") {
+                when (soloControl) {
+                    "size" -> SettingRow(label = "SIZE", value = "${hexSizeDp}dp") {
                         CorpoSlider(
                             value = hexSizeDp.toFloat(),
                             onValueChange = { onHexSizeChange(it.toInt()) },
                             valueRange = 60f..170f,
                         )
                     }
-                } else {
-                    SettingRow(label = "COUNT", value = "$hexCount") {
+                    "count" -> SettingRow(label = "COUNT", value = "$hexCount") {
                         CorpoSlider(
                             value = hexCount.toFloat(),
                             onValueChange = { onHexCountChange(it.toInt()) },
                             valueRange = 1f..MAX_HEX_COUNT.toFloat(),
                         )
                     }
+                    "spacing" -> SettingRow(label = "SPACING", value = "${tileSpacingDp}dp") {
+                        CorpoSlider(
+                            value = tileSpacingDp.toFloat(),
+                            onValueChange = { onTileSpacingChange(it.toInt()) },
+                            valueRange = 0f..60f,
+                        )
+                    }
+                    "marginTop" -> MarginRow(label = "MARGIN TOP", valueDp = marginTopDp, onValueChange = onMarginTopChange)
+                    "marginBottom" -> MarginRow(label = "MARGIN BOTTOM", valueDp = marginBottomDp, onValueChange = onMarginBottomChange)
+                    "marginStart" -> MarginRow(label = "MARGIN LEFT", valueDp = marginStartDp, onValueChange = onMarginStartChange)
+                    "marginEnd" -> MarginRow(label = "MARGIN RIGHT", valueDp = marginEndDp, onValueChange = onMarginEndChange)
+                    "colorMenuDelay" -> SettingRow(
+                        label = "COLOR MENU DELAY",
+                        value = if (colorMenuAutoOpenSeconds == 1) "1 SEC" else "$colorMenuAutoOpenSeconds SEC"
+                    ) {
+                        CorpoSlider(
+                            value = colorMenuAutoOpenSeconds.toFloat(),
+                            onValueChange = { onColorMenuAutoOpenSecondsChange(it.toInt()) },
+                            valueRange = 1f..60f,
+                        )
+                    }
+                    "mainMenuDelay" -> SettingRow(
+                        label = "SETTINGS MENU DELAY",
+                        value = if (mainMenuAutoOpenSeconds == 1) "1 SEC" else "$mainMenuAutoOpenSeconds SEC"
+                    ) {
+                        CorpoSlider(
+                            value = mainMenuAutoOpenSeconds.toFloat(),
+                            onValueChange = { onMainMenuAutoOpenSecondsChange(it.toInt()) },
+                            valueRange = 1f..60f,
+                        )
+                    }
                 }
-                if (didShrinkToFit) {
+                if (didShrinkToFit && (soloControl == "size" || soloControl == "count" || soloControl == "spacing" ||
+                        soloControl == "marginTop" || soloControl == "marginBottom" ||
+                        soloControl == "marginStart" || soloControl == "marginEnd")
+                ) {
                     Text(
                         text = "DOESN'T FIT THE SCREEN — SIZE AUTO-SHRUNK",
                         color = LaunColors.dim,
@@ -263,6 +313,40 @@ fun SettingsSheet(
                 )
             }
 
+            SettingRow(
+                label = "SPACING",
+                value = "${tileSpacingDp}dp",
+                onLabelClick = { soloControl = "spacing" }
+            ) {
+                CorpoSlider(
+                    value = tileSpacingDp.toFloat(),
+                    onValueChange = { onTileSpacingChange(it.toInt()) },
+                    valueRange = 0f..60f,
+                )
+            }
+
+            MarginRow(label = "MARGIN TOP", valueDp = marginTopDp, onValueChange = onMarginTopChange, onLabelClick = { soloControl = "marginTop" })
+            MarginRow(label = "MARGIN BOTTOM", valueDp = marginBottomDp, onValueChange = onMarginBottomChange, onLabelClick = { soloControl = "marginBottom" })
+            MarginRow(label = "MARGIN LEFT", valueDp = marginStartDp, onValueChange = onMarginStartChange, onLabelClick = { soloControl = "marginStart" })
+            MarginRow(label = "MARGIN RIGHT", valueDp = marginEndDp, onValueChange = onMarginEndChange, onLabelClick = { soloControl = "marginEnd" })
+
+            ToggleRow(
+                label = "HIDE EMPTY TILES",
+                checked = hideEmptyTiles,
+                onCheckedChange = onHideEmptyTilesChange,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            if (hideEmptyTiles) {
+                Text(
+                    text = "UNASSIGNED SLOTS STAY INVISIBLE UNTIL PRESSED — STILL TAP THERE TO ADD AN APP",
+                    color = LaunColors.dim,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 9.sp,
+                    letterSpacing = 0.6.sp,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                )
+            }
+
             // Interaction, not geometry — how touch on a tile resolves (drag freedom, how long a
             // hold takes to open the color menu), as opposed to GRID above (what the layout itself
             // looks like: tile size/count). Kept as its own section rather than folded into GRID —
@@ -305,14 +389,48 @@ fun SettingsSheet(
                 )
             }
 
+            ToggleRow(
+                label = "FREE TILE PLACEMENT",
+                checked = freeTilePlacement,
+                onCheckedChange = onFreeTilePlacementChange,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            if (freeTilePlacement) {
+                Text(
+                    text = if (freePositionMode) {
+                        "NO EFFECT WHILE FREE POSITION MODE IS ON"
+                    } else {
+                        "DRAG A TILE ONTO ANY OPEN SPACE ON THE GRID, NOT JUST ANOTHER TILE — NOTHING ELSE MOVES. NEEDS ROOM ON SCREEN BEYOND YOUR CURRENT TILES"
+                    },
+                    color = LaunColors.dim,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 9.sp,
+                    letterSpacing = 0.6.sp,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                )
+            }
+
             SettingRow(
                 label = "COLOR MENU DELAY",
                 value = if (colorMenuAutoOpenSeconds == 1) "1 SEC" else "$colorMenuAutoOpenSeconds SEC",
+                onLabelClick = { soloControl = "colorMenuDelay" },
                 modifier = Modifier.padding(top = 10.dp)
             ) {
                 CorpoSlider(
                     value = colorMenuAutoOpenSeconds.toFloat(),
                     onValueChange = { onColorMenuAutoOpenSecondsChange(it.toInt()) },
+                    valueRange = 1f..60f,
+                )
+            }
+
+            SettingRow(
+                label = "SETTINGS MENU DELAY",
+                value = if (mainMenuAutoOpenSeconds == 1) "1 SEC" else "$mainMenuAutoOpenSeconds SEC",
+                onLabelClick = { soloControl = "mainMenuDelay" },
+            ) {
+                CorpoSlider(
+                    value = mainMenuAutoOpenSeconds.toFloat(),
+                    onValueChange = { onMainMenuAutoOpenSecondsChange(it.toInt()) },
                     valueRange = 1f..60f,
                 )
             }
@@ -748,6 +866,26 @@ private fun SettingRow(
             Text(value, color = LaunColors.fg, fontFamily = MonoFontFamily, fontSize = 10.sp)
         }
         content()
+    }
+}
+
+/** One of the 4 MARGIN sliders — shared by the normal view and its solo-peek counterpart so the
+ *  0..200 range only ever lives in one place (it previously drifted out of sync with the 0..300
+ *  the settings themselves were stored/clamped to). */
+@Composable
+private fun MarginRow(
+    label: String,
+    valueDp: Int,
+    onValueChange: (Int) -> Unit,
+    onLabelClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    SettingRow(label = label, value = "${valueDp}dp", onLabelClick = onLabelClick, modifier = modifier) {
+        CorpoSlider(
+            value = valueDp.toFloat(),
+            onValueChange = { onValueChange(it.toInt()) },
+            valueRange = 0f..200f,
+        )
     }
 }
 

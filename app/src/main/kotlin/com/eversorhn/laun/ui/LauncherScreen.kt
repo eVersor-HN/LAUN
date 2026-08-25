@@ -253,6 +253,20 @@ fun LauncherScreen(
     val slots = remember(appsByPackage, settings.slotApps, liveHexCount) {
         (0 until liveHexCount).map { i -> (settings.slotApps[i] ?: emptyList()).mapNotNull { appsByPackage[it] } }
     }
+    // Slots beyond liveHexCount that were manually pinned somewhere on screen via free tile
+    // placement — rendered at their own fixed position regardless of COUNT. See HexGrid's
+    // freeTilePlacement/extraOccupiedSlots.
+    val pinnedSlots = remember(appsByPackage, settings.slotApps, liveHexCount) {
+        settings.slotApps
+            .filterKeys { it >= liveHexCount }
+            .mapValues { (_, pkgs) -> pkgs.mapNotNull { appsByPackage[it] } }
+            .filterValues { it.isNotEmpty() }
+    }
+    // Which of pinnedSlots' keys HexGrid is actually rendering right now — SIZE/COUNT/spacing/
+    // margins can all shrink capacity below a previously-pinned index, and an app stuck there
+    // with no visible tile shouldn't also stay stuck excluded from every picker (see
+    // assignedElsewhere below).
+    var visiblePinnedIndices by remember { mutableStateOf<Set<Int>>(emptySet()) }
     val freeformPositions = remember(settings.freeformPositions) {
         settings.freeformPositions.mapValues { (_, xy) -> Offset(xy.first, xy.second) }
     }
@@ -347,10 +361,20 @@ fun LauncherScreen(
             isOpen = isOpen,
             freePositionMode = settings.freePositionMode,
             snapMode = settings.snapMode,
+            freeTilePlacement = settings.freeTilePlacement,
+            extraOccupiedSlots = pinnedSlots,
+            onVisibleExtraIndicesChange = { visiblePinnedIndices = it },
             freeformPositions = freeformPositions,
             onFreeformPositionChange = { index, pos -> scope.launch { prefs.setFreeformPosition(index, pos.x, pos.y) } },
             colorMenuAutoOpenSeconds = settings.colorMenuAutoOpenSeconds,
+            mainMenuAutoOpenSeconds = settings.mainMenuAutoOpenSeconds,
             tileSizeOverrides = settings.tileSizeOverrides,
+            tileSpacingDp = settings.tileSpacingDp,
+            marginTopDp = settings.marginTopDp,
+            marginBottomDp = settings.marginBottomDp,
+            marginStartDp = settings.marginStartDp,
+            marginEndDp = settings.marginEndDp,
+            hideEmptyTiles = settings.hideEmptyTiles,
             onOpen = { if (appsLoaded) manualOpen = true },
             onCloseBackground = { manualOpen = false },
             onLongPressSlot = { apps, slotIndex, pos ->
@@ -372,9 +396,11 @@ fun LauncherScreen(
             onReorderSlots = { from, to ->
                 val fromApps = settings.slotApps[from] ?: emptyList()
                 val toApps = settings.slotApps[to] ?: emptyList()
-                // Both from and to are always within the current COUNT-sized visible grid (HexGrid
-                // never offers a drag target beyond it) — a move is always a pure swap, and COUNT
-                // never changes as a side effect of dragging.
+                // `to` is normally within the current COUNT-sized visible grid — a plain swap.
+                // With free tile placement on, HexGrid can also offer a cell beyond COUNT as a
+                // target; landing on an empty one there just pins the tile (toApps is empty, so
+                // this is still the same two-way swap, just with nothing on the other side).
+                // COUNT itself never changes as a side effect of dragging either way.
                 scope.launch {
                     prefs.setSlotApps(from, toApps)
                     prefs.setSlotApps(to, fromApps)
@@ -464,12 +490,14 @@ fun LauncherScreen(
     appPickerSlot?.let { slot ->
         // The pool excludes apps assigned to OTHER *visible* slots, but keeps this slot's own apps
         // in so they show up pre-checked (and can be unchecked) instead of vanishing from the list.
-        // A slot beyond COUNT is never rendered (see HexGrid), so an app sitting only in one is
-        // free to pick again here — picking it moves it into this slot (setSlotApps strips it out
-        // of its old one), rather than leaving it stuck excluded forever with nothing showing it.
-        val assignedElsewhere = remember(settings.slotApps, slot, liveHexCount) {
+        // A slot beyond COUNT only counts as "visible" while HexGrid is actually still rendering
+        // it there (see visiblePinnedIndices) — an app pinned at an index the current SIZE/COUNT/
+        // spacing/margins no longer have room for is free to pick again here, picking it moves it
+        // into this slot (setSlotApps strips it out of its old one) rather than leaving it stuck
+        // excluded forever with nothing showing it.
+        val assignedElsewhere = remember(settings.slotApps, slot, liveHexCount, visiblePinnedIndices) {
             settings.slotApps
-                .filterKeys { it != slot && it < liveHexCount }
+                .filterKeys { it != slot && (it < liveHexCount || it in visiblePinnedIndices) }
                 .values.flatten().toSet()
         }
         val pickerPool = remember(apps, assignedElsewhere) { apps.filterNot { it.packageName in assignedElsewhere } }
@@ -501,7 +529,7 @@ fun LauncherScreen(
 
     folderSlot?.let { slot ->
         FolderSheet(
-            apps = slots.getOrNull(slot).orEmpty(),
+            apps = slots.getOrNull(slot) ?: pinnedSlots[slot].orEmpty(),
             immersiveEnabled = settings.immersiveEnabled,
             onLaunch = { app -> repository.launch(app.packageName) },
             onDismiss = { folderSlot = null }
@@ -519,8 +547,24 @@ fun LauncherScreen(
             onFreePositionModeChange = { scope.launch { prefs.setFreePositionMode(it) } },
             snapMode = settings.snapMode,
             onSnapModeChange = { scope.launch { prefs.setSnapMode(it) } },
+            freeTilePlacement = settings.freeTilePlacement,
+            onFreeTilePlacementChange = { scope.launch { prefs.setFreeTilePlacement(it) } },
+            tileSpacingDp = settings.tileSpacingDp,
+            onTileSpacingChange = { scope.launch { prefs.setTileSpacing(it) } },
+            marginTopDp = settings.marginTopDp,
+            onMarginTopChange = { scope.launch { prefs.setMarginTop(it) } },
+            marginBottomDp = settings.marginBottomDp,
+            onMarginBottomChange = { scope.launch { prefs.setMarginBottom(it) } },
+            marginStartDp = settings.marginStartDp,
+            onMarginStartChange = { scope.launch { prefs.setMarginStart(it) } },
+            marginEndDp = settings.marginEndDp,
+            onMarginEndChange = { scope.launch { prefs.setMarginEnd(it) } },
+            hideEmptyTiles = settings.hideEmptyTiles,
+            onHideEmptyTilesChange = { scope.launch { prefs.setHideEmptyTiles(it) } },
             colorMenuAutoOpenSeconds = settings.colorMenuAutoOpenSeconds,
             onColorMenuAutoOpenSecondsChange = { scope.launch { prefs.setColorMenuAutoOpenSeconds(it) } },
+            mainMenuAutoOpenSeconds = settings.mainMenuAutoOpenSeconds,
+            onMainMenuAutoOpenSecondsChange = { scope.launch { prefs.setMainMenuAutoOpenSeconds(it) } },
             hudVisible = settings.hudVisible,
             onHudVisibleChange = { scope.launch { prefs.setHudVisible(it) } },
             hudShowStatus = settings.hudShowStatus,
