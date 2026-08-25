@@ -4,6 +4,15 @@ Built forward. Tracked clearly. Newest first.
 
 ---
 
+## 0.7.1 — 2026-08-25
+
+- Settings is now an accordion: each category (GRID, TILE INTERACTION, APPEARANCE, ANIMATION,
+  BACKGROUND, STATUS BAR, SYSTEM) collapses to a single line, tap to expand it — only one open
+  at a time, so opening Settings shows 7 short headers instead of the full list of every control
+  at once.
+- A toggle's own description (what it does, and what conflicts with it) is now always shown
+  underneath it, not only after switching it on.
+
 ## 0.7.0 — 2026-08-25
 
 - FREE TILE PLACEMENT is back as its own setting, alongside Free Position Mode and Snap Mode

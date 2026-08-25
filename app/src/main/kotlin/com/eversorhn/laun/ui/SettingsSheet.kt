@@ -157,6 +157,10 @@ fun SettingsSheet(
     // the screen, and the grid stays visible above while dragging. Toggles don't need this: they
     // resolve in one tap, not a drag you want to watch land.
     var soloControl by remember { mutableStateOf<String?>(null) }
+    // Accordion, not independent per-section flags — one section open at a time keeps the sheet
+    // short regardless of how many sections exist. Collapsed by default: opening Settings should
+    // show the 7 section titles, not the full list of every control underneath all of them.
+    var expandedSection by remember { mutableStateOf<String?>(null) }
 
     var showAnimationPicker by remember { mutableStateOf(false) }
     var showBackgroundPicker by remember { mutableStateOf(false) }
@@ -273,8 +277,13 @@ fun SettingsSheet(
                 .padding(bottom = 24.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            SectionHeader(title = "GRID", topPadding = 0.dp)
-
+            SectionHeader(
+                title = "GRID",
+                expanded = expandedSection == "GRID",
+                onClick = { expandedSection = if (expandedSection == "GRID") null else "GRID" },
+                topPadding = 0.dp
+            )
+            if (expandedSection == "GRID") {
             SettingRow(
                 label = "SIZE",
                 value = "${hexSizeDp}dp",
@@ -336,37 +345,39 @@ fun SettingsSheet(
                 onCheckedChange = onHideEmptyTilesChange,
                 modifier = Modifier.padding(top = 4.dp)
             )
-            if (hideEmptyTiles) {
-                Text(
-                    text = "UNASSIGNED SLOTS STAY INVISIBLE UNTIL PRESSED — STILL TAP THERE TO ADD AN APP",
-                    color = LaunColors.dim,
-                    fontFamily = MonoFontFamily,
-                    fontSize = 9.sp,
-                    letterSpacing = 0.6.sp,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
-                )
+            Text(
+                text = "UNASSIGNED SLOTS STAY INVISIBLE UNTIL PRESSED — STILL TAP THERE TO ADD AN APP",
+                color = LaunColors.dim,
+                fontFamily = MonoFontFamily,
+                fontSize = 9.sp,
+                letterSpacing = 0.6.sp,
+                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+            )
             }
 
             // Interaction, not geometry — how touch on a tile resolves (drag freedom, how long a
             // hold takes to open the color menu), as opposed to GRID above (what the layout itself
             // looks like: tile size/count). Kept as its own section rather than folded into GRID —
             // that reads as "the grid's own look," and gesture timing/reach isn't that.
-            SectionHeader(title = "TILE INTERACTION")
+            SectionHeader(
+                title = "TILE INTERACTION",
+                expanded = expandedSection == "TILE INTERACTION",
+                onClick = { expandedSection = if (expandedSection == "TILE INTERACTION") null else "TILE INTERACTION" }
+            )
+            if (expandedSection == "TILE INTERACTION") {
             ToggleRow(
                 label = "FREE POSITION MODE",
                 checked = freePositionMode,
                 onCheckedChange = onFreePositionModeChange,
             )
-            if (freePositionMode) {
-                Text(
-                    text = "DROP A TILE ANYWHERE — NO GRID, NO EDGE MARGIN. TILES STILL WON'T OVERLAP EACH OTHER OR EXCEED COUNT",
-                    color = LaunColors.dim,
-                    fontFamily = MonoFontFamily,
-                    fontSize = 9.sp,
-                    letterSpacing = 0.6.sp,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
-                )
-            }
+            Text(
+                text = "DROP A TILE ANYWHERE — NO GRID, NO EDGE MARGIN. TILES STILL WON'T OVERLAP EACH OTHER OR EXCEED COUNT",
+                color = LaunColors.dim,
+                fontFamily = MonoFontFamily,
+                fontSize = 9.sp,
+                letterSpacing = 0.6.sp,
+                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+            )
 
             ToggleRow(
                 label = "SNAP MODE",
@@ -374,20 +385,18 @@ fun SettingsSheet(
                 onCheckedChange = onSnapModeChange,
                 modifier = Modifier.padding(top = 4.dp)
             )
-            if (snapMode) {
-                Text(
-                    text = if (freePositionMode) {
-                        "NO EFFECT WHILE FREE POSITION MODE IS ON"
-                    } else {
-                        "DRAG DOESN'T NEED TO LAND EXACTLY ON A TILE — IT SNAPS TO WHICHEVER SLOT IS CLOSEST"
-                    },
-                    color = LaunColors.dim,
-                    fontFamily = MonoFontFamily,
-                    fontSize = 9.sp,
-                    letterSpacing = 0.6.sp,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
-                )
-            }
+            Text(
+                text = if (freePositionMode) {
+                    "NO EFFECT WHILE FREE POSITION MODE IS ON"
+                } else {
+                    "DRAG DOESN'T NEED TO LAND EXACTLY ON A TILE — IT SNAPS TO WHICHEVER SLOT IS CLOSEST"
+                },
+                color = LaunColors.dim,
+                fontFamily = MonoFontFamily,
+                fontSize = 9.sp,
+                letterSpacing = 0.6.sp,
+                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+            )
 
             ToggleRow(
                 label = "FREE TILE PLACEMENT",
@@ -395,20 +404,18 @@ fun SettingsSheet(
                 onCheckedChange = onFreeTilePlacementChange,
                 modifier = Modifier.padding(top = 4.dp)
             )
-            if (freeTilePlacement) {
-                Text(
-                    text = if (freePositionMode) {
-                        "NO EFFECT WHILE FREE POSITION MODE IS ON"
-                    } else {
-                        "DRAG A TILE ONTO ANY OPEN SPACE ON THE GRID, NOT JUST ANOTHER TILE — NOTHING ELSE MOVES. NEEDS ROOM ON SCREEN BEYOND YOUR CURRENT TILES"
-                    },
-                    color = LaunColors.dim,
-                    fontFamily = MonoFontFamily,
-                    fontSize = 9.sp,
-                    letterSpacing = 0.6.sp,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
-                )
-            }
+            Text(
+                text = if (freePositionMode) {
+                    "NO EFFECT WHILE FREE POSITION MODE IS ON"
+                } else {
+                    "DRAG A TILE ONTO ANY OPEN SPACE ON THE GRID, NOT JUST ANOTHER TILE — NOTHING ELSE MOVES. NEEDS ROOM ON SCREEN BEYOND YOUR CURRENT TILES"
+                },
+                color = LaunColors.dim,
+                fontFamily = MonoFontFamily,
+                fontSize = 9.sp,
+                letterSpacing = 0.6.sp,
+                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+            )
 
             SettingRow(
                 label = "COLOR MENU DELAY",
@@ -434,8 +441,14 @@ fun SettingsSheet(
                     valueRange = 1f..60f,
                 )
             }
+            }
 
-            SectionHeader(title = "APPEARANCE")
+            SectionHeader(
+                title = "APPEARANCE",
+                expanded = expandedSection == "APPEARANCE",
+                onClick = { expandedSection = if (expandedSection == "APPEARANCE") null else "APPEARANCE" }
+            )
+            if (expandedSection == "APPEARANCE") {
             ToggleRow(label = "APP ICONS INSTEAD OF NAME", checked = showAppIcons, onCheckedChange = onShowAppIconsChange)
             if (showAppIcons) {
                 // Range is capped at the same 20..75% the icon is clamped to at draw time — the
@@ -452,8 +465,14 @@ fun SettingsSheet(
                     )
                 }
             }
+            }
 
-            SectionHeader(title = "ANIMATION")
+            SectionHeader(
+                title = "ANIMATION",
+                expanded = expandedSection == "ANIMATION",
+                onClick = { expandedSection = if (expandedSection == "ANIMATION") null else "ANIMATION" }
+            )
+            if (expandedSection == "ANIMATION") {
             PickerRow(
                 label = "TILE REVEAL",
                 value = if (revealAnimation < 0) "NONE" else REVEAL_ANIMATIONS[revealAnimation],
@@ -470,8 +489,14 @@ fun SettingsSheet(
                     valueRange = 0f..100f,
                 )
             }
+            }
 
-            SectionHeader(title = "BACKGROUND")
+            SectionHeader(
+                title = "BACKGROUND",
+                expanded = expandedSection == "BACKGROUND",
+                onClick = { expandedSection = if (expandedSection == "BACKGROUND") null else "BACKGROUND" }
+            )
+            if (expandedSection == "BACKGROUND") {
             PickerRow(
                 label = "SOURCE",
                 value = when {
@@ -525,8 +550,14 @@ fun SettingsSheet(
                     onClick = { showColorPicker = true }
                 )
             }
+            }
 
-            SectionHeader(title = "STATUS BAR")
+            SectionHeader(
+                title = "STATUS BAR",
+                expanded = expandedSection == "STATUS BAR",
+                onClick = { expandedSection = if (expandedSection == "STATUS BAR") null else "STATUS BAR" }
+            )
+            if (expandedSection == "STATUS BAR") {
             ToggleRow(label = "SHOW", checked = hudVisible, onCheckedChange = onHudVisibleChange)
             Column(modifier = Modifier.padding(start = 12.dp).alpha(if (hudVisible) 1f else 0.35f)) {
                 ToggleRow(label = "STATUS", checked = hudShowStatus, onCheckedChange = onHudShowStatusChange, enabled = hudVisible)
@@ -539,8 +570,14 @@ fun SettingsSheet(
                 ToggleRow(label = "BLUETOOTH", checked = hudShowBluetooth, onCheckedChange = onHudShowBluetoothChange, enabled = hudVisible)
                 ToggleRow(label = "CURSOR", checked = hudShowCursor, onCheckedChange = onHudShowCursorChange, enabled = hudVisible)
             }
+            }
 
-            SectionHeader(title = "SYSTEM")
+            SectionHeader(
+                title = "SYSTEM",
+                expanded = expandedSection == "SYSTEM",
+                onClick = { expandedSection = if (expandedSection == "SYSTEM") null else "SYSTEM" }
+            )
+            if (expandedSection == "SYSTEM") {
             ToggleRow(label = "FULLSCREEN MODE", checked = immersiveEnabled, onCheckedChange = onImmersiveEnabledChange)
             ToggleRow(
                 label = "ALWAYS SHOW GRID",
@@ -548,19 +585,18 @@ fun SettingsSheet(
                 onCheckedChange = onAlwaysShowGridChange,
                 modifier = Modifier.padding(top = 4.dp)
             )
-            if (alwaysShowGrid) {
-                Text(
-                    text = "TILES ARE SHOWN RIGHT AWAY, NO TAP TO OPEN. SET TILE REVEAL ABOVE TO NONE SO THEY APPEAR FIXED WITH NO ANIMATION EITHER",
-                    color = LaunColors.dim,
-                    fontFamily = MonoFontFamily,
-                    fontSize = 9.sp,
-                    letterSpacing = 0.6.sp,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
-                )
-            }
+            Text(
+                text = "TILES ARE SHOWN RIGHT AWAY, NO TAP TO OPEN. SET TILE REVEAL ABOVE TO NONE SO THEY APPEAR FIXED WITH NO ANIMATION EITHER",
+                color = LaunColors.dim,
+                fontFamily = MonoFontFamily,
+                fontSize = 9.sp,
+                letterSpacing = 0.6.sp,
+                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+            )
             LinkRow(text = "FAQ", topPadding = 14.dp, onClick = onFaqClick)
             LinkRow(text = "ABOUT LAUNCHER", onClick = onAboutClick)
             LinkRow(text = "RESET TO DEFAULTS", onClick = onResetClick)
+            }
         }
     }
 
@@ -955,17 +991,36 @@ private fun ToggleRow(
     }
 }
 
-/** Groups related settings under a labeled divider, so the sheet reads as sections instead of a flat list. */
+/** Groups related settings under a labeled, clickable divider that collapses/expands the section
+ *  below it — accordion-style, so the sheet reads as a short list of categories by default instead
+ *  of every control in the app at once. */
 @Composable
-private fun SectionHeader(title: String, topPadding: androidx.compose.ui.unit.Dp = 18.dp) {
-    Column(modifier = Modifier.padding(top = topPadding, bottom = 10.dp)) {
-        Text(
-            text = title,
-            color = LaunColors.fg,
-            fontFamily = MonoFontFamily,
-            fontSize = 9.sp,
-            letterSpacing = 2.sp
-        )
+private fun SectionHeader(
+    title: String,
+    expanded: Boolean,
+    onClick: () -> Unit,
+    topPadding: androidx.compose.ui.unit.Dp = 18.dp
+) {
+    Column(modifier = Modifier.padding(top = topPadding, bottom = 10.dp).clickable(onClick = onClick)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = title,
+                color = LaunColors.fg,
+                fontFamily = MonoFontFamily,
+                fontSize = 9.sp,
+                letterSpacing = 2.sp
+            )
+            Text(
+                text = if (expanded) "▾" else "▸",
+                color = LaunColors.dim,
+                fontFamily = MonoFontFamily,
+                fontSize = 11.sp
+            )
+        }
         Box(
             modifier = Modifier
                 .padding(top = 6.dp)
