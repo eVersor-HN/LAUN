@@ -4,6 +4,25 @@ Built forward. Tracked clearly. Newest first.
 
 ---
 
+## 0.7.2 — 2026-08-26
+
+- Fixed: swiping up to search only ever counted the straight-line distance between where the
+  finger went down and where it lifted — easing back down a little right before lifting (a very
+  normal way to end a swipe) could measure short and fall through to launching whatever tile was
+  underneath, or opening its picker if it was empty. Now the whole gesture's peak upward travel
+  counts, and reaching it early blocks Settings, a tile's color menu, or picking the tile up to
+  drag from also firing mid-swipe.
+- Fixed: with HIDE EMPTY TILES on, a hidden tile stayed fully tappable — pressing exactly where
+  an invisible tile sat still opened its app picker. The toggle's effect wasn't part of the
+  grid's touch-handling setup, so switching it never actually took hold there until something
+  unrelated happened to refresh it. Hidden tiles now correctly pass taps and swipes straight
+  through to the background, while still lighting up as a valid drop target the moment an
+  in-progress drag reaches them.
+- Fixed: swiping in from the left or right edge could make tiles flash away and snap back — the
+  system's predictive-back preview animation, which has nothing meaningful to show behind a
+  launcher's own home screen. Turned off; the swipe still closes an open grid instantly, just
+  without the animated preview around it.
+
 ## 0.7.1 — 2026-08-25
 
 - Settings is now an accordion: each category (GRID, TILE INTERACTION, APPEARANCE, ANIMATION,
