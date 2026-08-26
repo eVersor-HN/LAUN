@@ -4,6 +4,33 @@ Built forward. Tracked clearly. Newest first.
 
 ---
 
+## 0.7.4 — 2026-08-26
+
+- Fixed the real cause of the edge-swipe glitch (tiles flashing/disappearing) reported on a
+  left/right swipe: confirmed on-device via logcat that Android's own system gesture-navigation
+  monitor was stealing the touch sequence away from LAUN mid-swipe to run its own back-gesture
+  animation. LAUN's screen now explicitly excludes itself from that interception
+  (`View.systemGestureExclusionRects`), so its own swipe handling always gets the whole gesture,
+  uninterrupted.
+- Fixed: even once the glitch above was gone, a left/right swipe could still highlight — and on
+  release, launch/open — whatever tile it happened to slide across. A recognized sideways swipe
+  now drops tile selection entirely, the same way an upward swipe-to-search already did.
+- Fixed: swiping up to go Home from another app could show every tile briefly jump to the wrong
+  position with the Android status bar flashing in, before snapping back. Root cause: the grid's
+  own layout was sized from the system status/navigation bars' live inset, and Android's home
+  transition briefly shows those bars for a frame or two even in Fullscreen mode, regardless of
+  LAUN's own hide() request — reflowing every tile for that instant. Fullscreen mode now ignores
+  system-bar insets entirely instead of reacting to their transient state during the transition.
+  (The bottom edge itself can't be excluded the way left/right can — Android reserves the
+  swipe-up-to-Home gesture so a launcher can never trap the user — so this fixes the visual glitch
+  that gesture caused rather than the handoff itself, which is normal.)
+- Apps launch faster: removed a redundant PackageManager re-resolve that ran on every single tap
+  (the launch target is now cached from the initial app-list load instead), and skipped Android's
+  default ~300ms open-app transition animation.
+- New: on first run, if LAUN isn't already exempt from battery optimization, offers to request
+  the exemption — some OEM battery managers kill a backgrounded launcher's process outright, which
+  then has to fully reload the installed-app list next time it's brought back.
+
 ## 0.7.3 — 2026-08-26
 
 - Fixed: swiping up from empty background lit up tiles it happened to pass over on the way, as

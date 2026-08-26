@@ -12,8 +12,8 @@ android {
         applicationId = "com.eversorhn.laun"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "0.7.3"
+        versionCode = 10
+        versionName = "0.7.4"
     }
 
     buildTypes {
