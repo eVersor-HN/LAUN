@@ -403,20 +403,6 @@ fun HexGrid(
         LaunchedEffect(visibleExtraIndices) { onVisibleExtraIndicesChange(visibleExtraIndices) }
 
         val density = LocalDensity.current
-        fun hitTile(point: Offset): Int? =
-            tiles.lastOrNull { hexContains(point, it, density) }?.index
-        // Snap mode's whole point is a forgiving target — released anywhere, not just precisely
-        // on the target's own small hex hitbox — so this picks whichever of [candidates] center
-        // is closest to the point instead of requiring the point to land inside a hex shape at
-        // all. Defaults to the honeycomb's own tiles (plain Snap Mode); free tile placement passes
-        // tiles + extraCells too, so a release can also land on genuinely empty screen space.
-        fun nearestTile(point: Offset, candidates: List<TileLayout> = tiles): Int? =
-            candidates.minByOrNull { tile ->
-                val cx = with(density) { tile.centerXDp.dp.toPx() }
-                val cy = with(density) { tile.centerYDp.dp.toPx() }
-                hypot((point.x - cx).toDouble(), (point.y - cy).toDouble())
-            }?.index
-
         // A geometry change while empty tiles are hidden would otherwise be invisible — SPACING
         // or a MARGIN slider has nothing to show for itself if every affected cell is blank and
         // undrawn. Briefly showing them on every such change (not just the first) is what makes
@@ -429,9 +415,41 @@ fun HexGrid(
                 revealHiddenEmpty = false
             }
         }
+        // A hidden empty tile (see revealHiddenEmpty above) is exactly that — hidden — so a fresh
+        // tap/press/swipe shouldn't be able to land on one at all; it should pass straight through
+        // to whatever's behind it (background). [includeHidden] is the one exception: mid-drag
+        // target-seeking (see dragTargetSlot below) still wants every genuinely empty cell as a
+        // valid drop zone, and the target it lands on is revealed immediately as feedback anyway.
+        fun hitTile(point: Offset, includeHidden: Boolean = false): Int? {
+            val candidates = if (includeHidden || !hideEmptyTiles || revealHiddenEmpty) {
+                tiles
+            } else {
+                tiles.filter { it.apps.isNotEmpty() }
+            }
+            return candidates.lastOrNull { hexContains(point, it, density) }?.index
+        }
+        // Snap mode's whole point is a forgiving target — released anywhere, not just precisely
+        // on the target's own small hex hitbox — so this picks whichever of [candidates] center
+        // is closest to the point instead of requiring the point to land inside a hex shape at
+        // all. Defaults to the honeycomb's own tiles (plain Snap Mode); free tile placement passes
+        // tiles + extraCells too, so a release can also land on genuinely empty screen space.
+        fun nearestTile(point: Offset, candidates: List<TileLayout> = tiles): Int? =
+            candidates.minByOrNull { tile ->
+                val cx = with(density) { tile.centerXDp.dp.toPx() }
+                val cy = with(density) { tile.centerYDp.dp.toPx() }
+                hypot((point.x - cx).toDouble(), (point.y - cy).toDouble())
+            }?.index
 
         var activeSlot by remember { mutableStateOf<Int?>(null) }
         var pressActive by remember { mutableStateOf(false) }
+        // Peak straight-up travel reached at any point during the current gesture, not just the
+        // distance between the final down/up points — a real swipe that eases back down a little
+        // right before the finger lifts (very common) would otherwise measure short and get
+        // resolved as a tap on whatever tile happens to be there. Only updated by samples where
+        // the motion is actually vertical-dominant, so a mostly-sideways drag can't count toward
+        // it. Read by the long-press LaunchedEffect below too, so a slow-but-clearly-upward swipe
+        // can't have Settings or a tile's color menu pop open on it while it's still in progress.
+        var maxUpDist by remember { mutableStateOf(0f) }
         // Set once the 500ms hold elapses. A tile press doesn't resolve to anything by itself right
         // here — the gesture loop still needs a short further window to see whether the finger moves
         // (drag) before the color menu auto-fires from the LaunchedEffect below.
@@ -470,6 +488,7 @@ fun HexGrid(
             if (pressActive) {
                 delay(500)
                 longPressArmed = true
+                val swipeUpPx = with(density) { SWIPE_UP_THRESHOLD_DP.dp.toPx() }
                 if (pressStartedOnBackground) {
                     // Same total press-down-to-auto-fire shape as the tile branch below: the
                     // 500ms arm delay above already ate part of mainMenuAutoOpenSeconds, this
@@ -477,7 +496,7 @@ fun HexGrid(
                     // as it arms can't fire Settings on a press that was never really "held").
                     val graceMs = (mainMenuAutoOpenSeconds.coerceIn(1, 60) * 1000L - 500L).coerceAtLeast(500L)
                     delay(graceMs)
-                    if (pressActive) onLongPressBackground()
+                    if (pressActive && maxUpDist <= swipeUpPx) onLongPressBackground()
                 } else {
                     // Total time from press-down to auto-fire is colorMenuAutoOpenSeconds — the
                     // 500ms arm delay above already ate part of that, and this grace window (kept
@@ -486,7 +505,7 @@ fun HexGrid(
                     val graceMs = (colorMenuAutoOpenSeconds.coerceIn(1, 60) * 1000L - 500L).coerceAtLeast(500L)
                     delay(graceMs)
                     val slot = activeSlot
-                    if (pressActive && !isDragging && slot != null) {
+                    if (pressActive && !isDragging && maxUpDist <= swipeUpPx && slot != null) {
                         val slotApps = tiles.firstOrNull { it.index == slot }?.apps.orEmpty()
                         if (slotApps.isNotEmpty()) {
                             longPressSlotFired = true
@@ -504,9 +523,16 @@ fun HexGrid(
                 // itself — the drag-release branch below reads it directly, and pointerInput only
                 // gets a fresh closure (with that decision's current value) when one of its keys
                 // actually changes, not on every recomposition.
-                .pointerInput(tiles, extraCells, isOpen, freePositionMode, snapMode, freeTilePlacement) {
+                // hideEmptyTiles/revealHiddenEmpty are here even though `tiles`' own content
+                // doesn't depend on them — hitTile()/nearestTile() read them directly, and this
+                // whole block only gets a fresh closure over them when one of these keys actually
+                // changes, not on every recomposition. Without it, toggling Hide Empty Tiles
+                // didn't take effect until something else happened to change `tiles` too — a
+                // hidden tile stayed fully tappable, the exact thing the setting promises not to do.
+                .pointerInput(tiles, extraCells, isOpen, freePositionMode, snapMode, freeTilePlacement, hideEmptyTiles, revealHiddenEmpty) {
                     val topDeadZonePx = with(density) { TOP_DEAD_ZONE_DP.dp.toPx() }
                     val dragSlopPx = with(density) { DRAG_SLOP_DP.dp.toPx() }
+                    val swipeUpThresholdPx = with(density) { SWIPE_UP_THRESHOLD_DP.dp.toPx() }
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
 
@@ -529,6 +555,7 @@ fun HexGrid(
                             longPressArmed = false
                             activeSlot = null
                             pressStartedOnBackground = true
+                            maxUpDist = 0f
                             val swipeStartPos = down.position
                             var lastPos = down.position
                             try {
@@ -536,14 +563,19 @@ fun HexGrid(
                                     val event = awaitPointerEvent()
                                     val change = event.changes.firstOrNull() ?: break
                                     lastPos = change.position
+                                    val dyUp = swipeStartPos.y - change.position.y
+                                    val dxSide = abs(change.position.x - swipeStartPos.x)
+                                    if (dyUp > maxUpDist && dyUp > dxSide) maxUpDist = dyUp
                                     if (change.changedToUp()) break
                                 }
-                                val upDist = swipeStartPos.y - lastPos.y
-                                val sideDist = abs(lastPos.x - swipeStartPos.x)
-                                val swipeUpThresholdPx = with(density) { SWIPE_UP_THRESHOLD_DP.dp.toPx() }
                                 when {
+                                    // Checked before longPressArmed (not just instead of it) — the
+                                    // LaunchedEffect above already refrains from firing Settings once
+                                    // a clear upward swipe is under way, so falling through to the
+                                    // old longPressArmed-blocks-everything behavior here would just
+                                    // silently swallow the gesture instead of still recognizing it.
+                                    maxUpDist > swipeUpThresholdPx -> onSwipeUpBackground()
                                     longPressArmed -> {}
-                                    upDist > swipeUpThresholdPx && upDist > sideDist -> onSwipeUpBackground()
                                     else -> onOpen()
                                 }
                             } finally {
@@ -561,6 +593,7 @@ fun HexGrid(
                         dragOffsetPx = Offset.Zero
                         downPos = down.position
                         lastPointerPos = down.position
+                        maxUpDist = 0f
                         activeSlot = hitTile(down.position)
                         pressStartedOnBackground = activeSlot == null
 
@@ -575,6 +608,9 @@ fun HexGrid(
                                 val event = awaitPointerEvent()
                                 val change = event.changes.firstOrNull() ?: break
                                 lastPointerPos = change.position
+                                val dyUp = downPos.y - change.position.y
+                                val dxSide = abs(change.position.x - downPos.x)
+                                if (dyUp > maxUpDist && dyUp > dxSide) maxUpDist = dyUp
 
                                 if (!isDragging) {
                                     val movedPx = hypot(change.position.x - downPos.x, change.position.y - downPos.y)
@@ -583,7 +619,11 @@ fun HexGrid(
                                     // direction, and restricting the source to "occupied only" meant
                                     // a long-press that started a hair off the intended tile (landing
                                     // on its empty neighbor instead) silently refused to drag at all.
-                                    if (longPressArmed && movedPx > dragSlopPx && activeSlot != null) {
+                                    // Also gated on maxUpDist so a long-press that's already turned
+                                    // into a clear upward swipe (armed by an unusually slow flick)
+                                    // can't still be picked up as a tile drag once it crosses the
+                                    // ordinary drag slop.
+                                    if (longPressArmed && movedPx > dragSlopPx && activeSlot != null && maxUpDist <= swipeUpThresholdPx) {
                                         // Held still long enough, then dragged — pick up the tile
                                         // instead of opening the color picker on release.
                                         isDragging = true
@@ -602,7 +642,7 @@ fun HexGrid(
                                         freePositionMode -> null
                                         freeTilePlacement -> nearestTile(change.position, tiles + extraCells)
                                         snapMode -> nearestTile(change.position)
-                                        else -> hitTile(change.position)
+                                        else -> hitTile(change.position, includeHidden = true)
                                     }
                                 }
 
@@ -645,15 +685,17 @@ fun HexGrid(
                             } else if (!isDragging && !longPressArmed) {
                                 val slot = activeSlot
                                 val slotApps = tiles.firstOrNull { it.index == slot }?.apps.orEmpty()
-                                val upDist = downPos.y - lastPointerPos.y
-                                val sideDist = abs(lastPointerPos.x - downPos.x)
-                                val swipeUpThresholdPx = with(density) { SWIPE_UP_THRESHOLD_DP.dp.toPx() }
                                 when {
                                     // A genuine swipe-up always reaches search, even if the finger
                                     // happened to land on a tile first — otherwise an accidental
                                     // tile hit while swiping up opens that tile's own app-search
-                                    // (to add an app to it) instead of the intended global search.
-                                    upDist > swipeUpThresholdPx && upDist > sideDist -> onSwipeUpBackground()
+                                    // (to add an app to it), launches the app in it, or just gets
+                                    // silently absorbed by an invisible hidden-empty tile, instead
+                                    // of reaching the intended global search. Peak travel during
+                                    // the gesture, not just the final release point, since easing
+                                    // back down a little right before lifting the finger is a
+                                    // completely normal way to end a swipe.
+                                    maxUpDist > swipeUpThresholdPx -> onSwipeUpBackground()
                                     slotApps.size == 1 -> onLaunch(slotApps[0])
                                     slotApps.size > 1 -> onOpenFolder(slot!!, slotApps)
                                     slot != null -> onTapEmptySlot(slot)

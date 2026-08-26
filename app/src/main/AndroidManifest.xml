@@ -33,13 +33,19 @@
         </intent>
     </queries>
 
+    <!-- A launcher activity has no real "previous screen" to preview, so the system's
+         predictive-back animation (edge-swipe from the left/right) was showing tiles fading
+         through to nothing, then snapping back once our own BackHandler ran — visible as tiles
+         disappearing for a moment on an edge swipe. The actual back handling (closing the open
+         grid) is unaffected; this only turns off the animated preview around it. -->
     <application
         android:allowBackup="true"
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/Theme.Launcher"
-        android:supportsRtl="true">
+        android:supportsRtl="true"
+        android:enableOnBackInvokedCallback="false">
 
         <activity
             android:name=".MainActivity"
