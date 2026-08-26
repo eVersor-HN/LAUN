@@ -406,10 +406,18 @@ fun HexGrid(
         // A geometry change while empty tiles are hidden would otherwise be invisible — SPACING
         // or a MARGIN slider has nothing to show for itself if every affected cell is blank and
         // undrawn. Briefly showing them on every such change (not just the first) is what makes
-        // dragging one of those sliders from Settings actually readable.
+        // dragging one of those sliders from Settings actually readable. Skips the very first
+        // time this runs (a fresh app launch/relaunch, which reads as just another key "change"
+        // since there's no prior value to compare against) — flashing every hidden slot the
+        // instant the grid first appears has nothing to do with a change the user just made, and
+        // stacked on top of the tile reveal animation already playing at the same time (also
+        // freshest on a first launch), it reads as a glitch rather than the intended callout.
         var revealHiddenEmpty by remember { mutableStateOf(false) }
+        val isFirstRevealCheck = remember { mutableStateOf(true) }
         LaunchedEffect(hexSizeDp, slots.size, tileSpacingDp, marginTopDp, marginBottomDp, marginStartDp, marginEndDp, hideEmptyTiles) {
-            if (hideEmptyTiles) {
+            if (isFirstRevealCheck.value) {
+                isFirstRevealCheck.value = false
+            } else if (hideEmptyTiles) {
                 revealHiddenEmpty = true
                 delay(900)
                 revealHiddenEmpty = false
@@ -628,7 +636,13 @@ fun HexGrid(
                                         // instead of opening the color picker on release.
                                         isDragging = true
                                         dragSlot = activeSlot
-                                    } else if (!longPressArmed) {
+                                    } else if (!longPressArmed && !pressStartedOnBackground) {
+                                        // Only re-hit-tests for a gesture that started ON a tile
+                                        // (sliding between adjacent tiles while deciding which one
+                                        // to press/drag) — a gesture that started on background,
+                                        // like a swipe up to search, never picks up a tile just
+                                        // because it happened to pass over one on the way, so
+                                        // tiles along a swipe's path don't light up as if pressed.
                                         val hit = hitTile(change.position)
                                         if (hit != activeSlot) activeSlot = hit
                                     }
