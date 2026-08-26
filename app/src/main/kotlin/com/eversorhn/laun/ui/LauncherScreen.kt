@@ -350,6 +350,14 @@ fun LauncherScreen(
             }
         }
 
+        // Guards against a real, visible flash on every cold start (or an OEM-triggered process
+        // restart mid-gesture — some launchers get relaunched from scratch on a plain app-switch
+        // swipe instead of just resuming) where slotApps is already loaded from disk but the
+        // installed-app list itself hasn't finished enumerating yet: every slot would briefly
+        // render as empty (appsByPackage has nothing to map slotApps' package names to) before
+        // snapping to its real content once loadApps() resolves. Skipping the whole grid until
+        // then means that gap is just blank background, not a wrong grid correcting itself.
+        if (appsLoaded) {
         HexGrid(
             slots = slots,
             hexSizeDp = liveHexSizeDp,
@@ -412,6 +420,7 @@ fun LauncherScreen(
                 .systemBarsPadding()
                 .padding(vertical = if (settings.hudVisible) 64.dp else 0.dp)
         )
+        }
 
         if (settings.hudVisible) {
             StatusBar(

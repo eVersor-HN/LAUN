@@ -4,6 +4,22 @@ Built forward. Tracked clearly. Newest first.
 
 ---
 
+## 0.7.3 — 2026-08-26
+
+- Fixed: swiping up from empty background lit up tiles it happened to pass over on the way, as
+  if they were being pressed — a swipe that starts on background now never picks up a tile just
+  because the finger crossed over it.
+- Fixed: on some devices, switching away and back (or even just an edge-swipe back gesture) can
+  restart LAUN's process from scratch rather than simply resuming it. When that happens, the
+  installed-app list takes a moment to reload, and every tile briefly rendered as empty before
+  snapping to its real content once it finished — most visible with HIDE EMPTY TILES on, where it
+  looked like every hidden slot flashing on before the real tiles caught up. The grid now stays
+  blank for that brief moment instead of showing the wrong content and correcting itself, and the
+  HIDE EMPTY TILES reveal-on-change flash no longer fires on that first frame either. Also widened
+  the set of configuration changes LAUN handles itself (density, font scale, locale, layout
+  direction) so a genuine system-level change is less likely to trigger this kind of restart in
+  the first place.
+
 ## 0.7.2 — 2026-08-26
 
 - Fixed: swiping up to search only ever counted the straight-line distance between where the
