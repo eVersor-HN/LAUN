@@ -57,6 +57,7 @@ data class LauncherSettings(
     val backgroundColor: String? = null,
     val hasShownDefaultLauncherHint: Boolean = false,
     val hasShownGestureHint: Boolean = false,
+    val hasShownBatteryHint: Boolean = false,
     val tileColors: Map<String, String> = emptyMap(),
     /** One or more packages per slot — one is a normal tile, more than one is a folder tile. */
     val slotApps: Map<Int, List<String>> = emptyMap(),
@@ -162,6 +163,7 @@ class LauncherPrefs(private val context: Context) {
         val BACKGROUND_COLOR = stringPreferencesKey("background_color")
         val HAS_SHOWN_DEFAULT_LAUNCHER_HINT = booleanPreferencesKey("has_shown_default_launcher_hint")
         val HAS_SHOWN_GESTURE_HINT = booleanPreferencesKey("has_shown_gesture_hint")
+        val HAS_SHOWN_BATTERY_HINT = booleanPreferencesKey("has_shown_battery_hint")
         val TILE_COLORS = stringSetPreferencesKey("tile_colors")
         val SLOT_APPS = stringSetPreferencesKey("slot_apps")
         val CUSTOM_APP_NAMES = stringSetPreferencesKey("custom_app_names")
@@ -213,6 +215,7 @@ class LauncherPrefs(private val context: Context) {
             backgroundColor = prefs[Keys.BACKGROUND_COLOR],
             hasShownDefaultLauncherHint = prefs[Keys.HAS_SHOWN_DEFAULT_LAUNCHER_HINT] ?: false,
             hasShownGestureHint = prefs[Keys.HAS_SHOWN_GESTURE_HINT] ?: false,
+            hasShownBatteryHint = prefs[Keys.HAS_SHOWN_BATTERY_HINT] ?: false,
             tileColors = (prefs[Keys.TILE_COLORS] ?: emptySet())
                 .mapNotNull { entry ->
                     val i = entry.indexOf('|')
@@ -382,6 +385,10 @@ class LauncherPrefs(private val context: Context) {
 
     suspend fun setHasShownGestureHint(shown: Boolean) {
         context.dataStore.edit { it[Keys.HAS_SHOWN_GESTURE_HINT] = shown }
+    }
+
+    suspend fun setHasShownBatteryHint(shown: Boolean) {
+        context.dataStore.edit { it[Keys.HAS_SHOWN_BATTERY_HINT] = shown }
     }
 
     /**

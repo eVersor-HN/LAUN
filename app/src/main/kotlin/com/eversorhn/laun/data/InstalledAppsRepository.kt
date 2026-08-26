@@ -1,5 +1,6 @@
 package com.eversorhn.laun.data
 
+import android.app.ActivityOptions
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -38,15 +39,33 @@ class InstalledAppsRepository(private val context: Context) {
                     // Tiles only ever render this at 28dp — decoding at native adaptive-icon
                     // resolution (often 300px+) wastes memory across every installed app, not
                     // just the ones assigned to a slot.
-                    icon = info.loadIcon(pm).toBitmap(width = ICON_SIZE_PX, height = ICON_SIZE_PX).asImageBitmap()
+                    icon = info.loadIcon(pm).toBitmap(width = ICON_SIZE_PX, height = ICON_SIZE_PX).asImageBitmap(),
+                    activityName = info.activityInfo.name
                 )
             }
             .sortedBy { it.label.lowercase() }
     }
 
-    fun launch(packageName: String) {
-        val intent = context.packageManager.getLaunchIntentForPackage(packageName) ?: return
+    /** Builds the launch Intent directly from the already-resolved component instead of asking
+     *  PackageManager to re-resolve it (getLaunchIntentForPackage) on every single tap — that's a
+     *  synchronous binder call to system_server sitting right in front of startActivity(), on the
+     *  exact path where launch latency is most noticeable. Falls back to the PM lookup only if
+     *  activityName wasn't captured (shouldn't happen for anything loaded via loadApps()). */
+    fun launch(app: AppInfo) {
+        val intent = if (app.activityName.isNotEmpty()) {
+            Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                component = android.content.ComponentName(app.packageName, app.activityName)
+            }
+        } else {
+            context.packageManager.getLaunchIntentForPackage(app.packageName) ?: return
+        }
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
+        // Skips Android's default ~300ms cross-fade/zoom open-app transition — on top of the
+        // target app's own cold-start time, that's pure added latency between the tap and
+        // something useful appearing, and this launcher has no "old screen" worth animating away
+        // from anyway.
+        val options = ActivityOptions.makeCustomAnimation(context, 0, 0)
+        context.startActivity(intent, options.toBundle())
     }
 }

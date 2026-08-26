@@ -34,8 +34,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.Lifecycle
@@ -171,6 +174,7 @@ fun LauncherScreen(
     var showFaq by remember { mutableStateOf(false) }
     var showLauncherHint by remember { mutableStateOf(false) }
     var showGestureHint by remember { mutableStateOf(false) }
+    var showBatteryHint by remember { mutableStateOf(false) }
     // Gated on settingsState (nullable) rather than settings.hasShownDefaultLauncherHint directly —
     // collectAsState's `initial` default (hasShownDefaultLauncherHint = false) would otherwise make
     // this fire on every cold start before the real, already-persisted value loads from DataStore.
@@ -179,9 +183,9 @@ fun LauncherScreen(
     // write below completes — without it, the gesture hint would auto-appear the instant the
     // default-launcher-hint flag finishes writing (milliseconds later), stacking both dialogs at
     // once instead of showing the gesture hint only once the user actually dismisses the first.
-    // The gesture hint's own entry into that sequence is handled in DefaultLauncherHintSheet's
-    // onDismiss below; this effect only covers first-ever-load and "already saw hint 1, never saw
-    // hint 2" (e.g. updating from a build before the gesture hint existed).
+    // Each hint's own entry into the next one is handled in its own onDismiss below; this effect
+    // only covers first-ever-load and "already saw an earlier hint, never saw a later one" (e.g.
+    // updating from a build before that hint existed).
     var hintCheckDone by remember { mutableStateOf(false) }
     LaunchedEffect(settingsState) {
         val loaded = settingsState ?: return@LaunchedEffect
@@ -195,6 +199,14 @@ fun LauncherScreen(
             !loaded.hasShownGestureHint -> {
                 showGestureHint = true
                 prefs.setHasShownGestureHint(true)
+            }
+            !loaded.hasShownBatteryHint -> {
+                // Only actually shown if not already exempt — no point nagging someone who's
+                // already granted it (an OEM default, or set manually before ever seeing this).
+                if (!com.eversorhn.laun.data.BatteryOptimization.isIgnoringBatteryOptimizations(context)) {
+                    showBatteryHint = true
+                }
+                prefs.setHasShownBatteryHint(true)
             }
         }
     }
@@ -230,6 +242,7 @@ fun LauncherScreen(
                 showFaq = false
                 showLauncherHint = false
                 showGestureHint = false
+                showBatteryHint = false
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -318,10 +331,34 @@ fun LauncherScreen(
         onDispose { context.unregisterReceiver(receiver) }
     }
 
+    val rootView = LocalView.current
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(LaunColors.bg)
+            // Confirmed via logcat on-device: without this, the system's own gesture-nav monitor
+            // (edge-swipe-back, swipe-up-home) can steal an in-progress touch away from this
+            // screen mid-gesture — InputDispatcher logs it outright as "[Gesture Monitor] swipe-up
+            // is stealing input gesture ... from [.../MainActivity]". A launcher's whole screen is
+            // its own full-surface gesture area — there's no "content underneath" a system
+            // back/home gesture should ever be revealing here — so the entire screen opts out of
+            // being intercepted that way, and OUR OWN swipe/press handling always gets the whole
+            // gesture uninterrupted, edge to edge. Compose has no modifier for this (there is no
+            // Modifier.systemGestureExclusion — only the plain View property, added in API 29),
+            // so it's set imperatively on the root View once we know our on-screen bounds.
+            .onGloballyPositioned { coordinates ->
+                if (android.os.Build.VERSION.SDK_INT >= 29) {
+                    val bounds = coordinates.boundsInWindow()
+                    rootView.systemGestureExclusionRects = listOf(
+                        android.graphics.Rect(
+                            bounds.left.toInt(),
+                            bounds.top.toInt(),
+                            bounds.right.toInt(),
+                            bounds.bottom.toInt()
+                        )
+                    )
+                }
+            }
     ) {
         val backgroundOpacityFraction = settings.backgroundOpacity / 100f
         if (settings.backgroundAnimation >= 0) {
@@ -398,7 +435,7 @@ fun LauncherScreen(
                 // back gesture (or task switcher) finds the grid still fully open, and its
                 // predictive-back preview flashes the open grid over the launched app.
                 manualOpen = false
-                repository.launch(app.packageName)
+                repository.launch(app)
             },
             onOpenFolder = { slotIndex, _ -> folderSlot = slotIndex },
             onReorderSlots = { from, to ->
@@ -417,7 +454,14 @@ fun LauncherScreen(
             onShrinkToFitChange = { didShrinkToFit = it },
             modifier = Modifier
                 .fillMaxSize()
-                .systemBarsPadding()
+                // Only follows the system bars' live inset while they're meant to stay visible.
+                // In fullscreen mode they're hidden anyway, but Android's own home/app-switch
+                // transition animations still show them for a frame or two regardless of our own
+                // hide() request — reacting to that transient inset here reflowed every tile's
+                // position for that instant (confirmed on-device: tiles visibly jump, snap back
+                // once the transition settles), so fullscreen mode ignores system-bar insets
+                // entirely instead of chasing their transient state.
+                .then(if (!settings.immersiveEnabled) Modifier.systemBarsPadding() else Modifier)
                 .padding(vertical = if (settings.hudVisible) 64.dp else 0.dp)
         )
         }
@@ -437,7 +481,7 @@ fun LauncherScreen(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .fillMaxWidth()
-                    .systemBarsPadding()
+                    .then(if (!settings.immersiveEnabled) Modifier.systemBarsPadding() else Modifier)
                     .padding(horizontal = 20.dp, vertical = 20.dp)
             )
         }
@@ -530,7 +574,7 @@ fun LauncherScreen(
             immersiveEnabled = settings.immersiveEnabled,
             onLaunch = { app ->
                 showAppSearch = false
-                repository.launch(app.packageName)
+                repository.launch(app)
             },
             onDismiss = { showAppSearch = false }
         )
@@ -540,7 +584,7 @@ fun LauncherScreen(
         FolderSheet(
             apps = slots.getOrNull(slot) ?: pinnedSlots[slot].orEmpty(),
             immersiveEnabled = settings.immersiveEnabled,
-            onLaunch = { app -> repository.launch(app.packageName) },
+            onLaunch = { app -> repository.launch(app) },
             onDismiss = { folderSlot = null }
         )
     }
@@ -667,6 +711,23 @@ fun LauncherScreen(
             onDismiss = {
                 showGestureHint = false
                 scope.launch { prefs.setHasShownGestureHint(true) }
+                // Same fresh-install chaining as hint 1 -> hint 2 above, one step further.
+                if (!settings.hasShownBatteryHint) {
+                    if (!com.eversorhn.laun.data.BatteryOptimization.isIgnoringBatteryOptimizations(context)) {
+                        showBatteryHint = true
+                    }
+                    scope.launch { prefs.setHasShownBatteryHint(true) }
+                }
+            }
+        )
+    }
+
+    if (showBatteryHint) {
+        BatteryHintSheet(
+            immersiveEnabled = settings.immersiveEnabled,
+            onDismiss = {
+                showBatteryHint = false
+                scope.launch { prefs.setHasShownBatteryHint(true) }
             }
         )
     }

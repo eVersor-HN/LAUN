@@ -77,6 +77,12 @@ private const val DRAG_SLOP_DP = 12f
  *  search" instead of a tap/long-press — deliberately more than a flick so it can't be triggered
  *  by accident while just opening the grid. */
 private const val SWIPE_UP_THRESHOLD_DP = 72f
+/** How far a press has to travel sideways, dominantly, before it's recognized as a left/right
+ *  swipe rather than a tap or the start of a tile drag. This is Android's own edge-swipe-back
+ *  gesture passing all the way across our screen (system gesture nav can't be excluded from that
+ *  swipe, only its cancel-glitch is fixed elsewhere) — once recognized, tiles it crosses must stop
+ *  being selectable so it can never accidentally launch/open whatever it happens to slide over. */
+private const val SWIPE_SIDE_THRESHOLD_DP = 24f
 
 /**
  * True point-in-hexagon test against the tile's actual rendered (scaled) shape — not its
@@ -458,6 +464,10 @@ fun HexGrid(
         // it. Read by the long-press LaunchedEffect below too, so a slow-but-clearly-upward swipe
         // can't have Settings or a tile's color menu pop open on it while it's still in progress.
         var maxUpDist by remember { mutableStateOf(0f) }
+        // Same idea, sideways — once a press is recognized as a dominantly-horizontal swipe
+        // (Android's own edge-swipe-back gesture crossing our screen), activeSlot is frozen/cleared
+        // below so no tile it slides over can end up "pressed" and fire on release.
+        var maxSideDist by remember { mutableStateOf(0f) }
         // Set once the 500ms hold elapses. A tile press doesn't resolve to anything by itself right
         // here — the gesture loop still needs a short further window to see whether the finger moves
         // (drag) before the color menu auto-fires from the LaunchedEffect below.
@@ -541,6 +551,7 @@ fun HexGrid(
                     val topDeadZonePx = with(density) { TOP_DEAD_ZONE_DP.dp.toPx() }
                     val dragSlopPx = with(density) { DRAG_SLOP_DP.dp.toPx() }
                     val swipeUpThresholdPx = with(density) { SWIPE_UP_THRESHOLD_DP.dp.toPx() }
+                    val swipeSideThresholdPx = with(density) { SWIPE_SIDE_THRESHOLD_DP.dp.toPx() }
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
 
@@ -602,6 +613,7 @@ fun HexGrid(
                         downPos = down.position
                         lastPointerPos = down.position
                         maxUpDist = 0f
+                        maxSideDist = 0f
                         activeSlot = hitTile(down.position)
                         pressStartedOnBackground = activeSlot == null
 
@@ -619,6 +631,14 @@ fun HexGrid(
                                 val dyUp = downPos.y - change.position.y
                                 val dxSide = abs(change.position.x - downPos.x)
                                 if (dyUp > maxUpDist && dyUp > dxSide) maxUpDist = dyUp
+                                if (dxSide > maxSideDist && dxSide > dyUp) maxSideDist = dxSide
+                                // Recognized as a left/right swipe (Android's own edge-swipe-back
+                                // gesture, which still reaches us as normal touch input once system
+                                // gesture theft is excluded) — drop whatever tile was under the
+                                // finger so it can't end up "pressed" for the rest of the swipe.
+                                if (maxSideDist > swipeSideThresholdPx && activeSlot != null && !isDragging) {
+                                    activeSlot = null
+                                }
 
                                 if (!isDragging) {
                                     val movedPx = hypot(change.position.x - downPos.x, change.position.y - downPos.y)
@@ -627,22 +647,27 @@ fun HexGrid(
                                     // direction, and restricting the source to "occupied only" meant
                                     // a long-press that started a hair off the intended tile (landing
                                     // on its empty neighbor instead) silently refused to drag at all.
-                                    // Also gated on maxUpDist so a long-press that's already turned
-                                    // into a clear upward swipe (armed by an unusually slow flick)
-                                    // can't still be picked up as a tile drag once it crosses the
-                                    // ordinary drag slop.
-                                    if (longPressArmed && movedPx > dragSlopPx && activeSlot != null && maxUpDist <= swipeUpThresholdPx) {
+                                    // Also gated on maxUpDist/maxSideDist so a long-press that's
+                                    // already turned into a clear swipe (armed by an unusually slow
+                                    // flick) can't still be picked up as a tile drag once it crosses
+                                    // the ordinary drag slop.
+                                    if (longPressArmed && movedPx > dragSlopPx && activeSlot != null &&
+                                        maxUpDist <= swipeUpThresholdPx && maxSideDist <= swipeSideThresholdPx
+                                    ) {
                                         // Held still long enough, then dragged — pick up the tile
                                         // instead of opening the color picker on release.
                                         isDragging = true
                                         dragSlot = activeSlot
-                                    } else if (!longPressArmed && !pressStartedOnBackground) {
+                                    } else if (!longPressArmed && !pressStartedOnBackground && maxSideDist <= swipeSideThresholdPx) {
                                         // Only re-hit-tests for a gesture that started ON a tile
                                         // (sliding between adjacent tiles while deciding which one
                                         // to press/drag) — a gesture that started on background,
                                         // like a swipe up to search, never picks up a tile just
                                         // because it happened to pass over one on the way, so
                                         // tiles along a swipe's path don't light up as if pressed.
+                                        // Once recognized as a left/right swipe, stop re-hit-testing
+                                        // entirely too, or the very next tile under the finger would
+                                        // just get re-selected right after the line above clears it.
                                         val hit = hitTile(change.position)
                                         if (hit != activeSlot) activeSlot = hit
                                     }

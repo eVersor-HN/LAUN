@@ -18,6 +18,11 @@
     <!-- Normal permission, granted at install with no runtime prompt — lets the OLED BLACK
          background option also set the real system wallpaper to solid black. -->
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
+    <!-- A launcher's whole job is to be available instantly, all the time — unlike an ordinary
+         app it costs nothing while idle, and Doze/OEM background-app management killing it and
+         forcing a full app-list reload on every return costs more battery than staying resident.
+         This just lets LAUN prompt for the exemption (see BatteryHintSheet); it's the user's call. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- Without this, Android 11+ package visibility hides most apps from queryIntentActivities. -->
     <queries>
