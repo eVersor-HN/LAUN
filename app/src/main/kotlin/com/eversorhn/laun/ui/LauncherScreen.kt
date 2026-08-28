@@ -421,7 +421,6 @@ fun LauncherScreen(
             marginEndDp = settings.marginEndDp,
             hideEmptyTiles = settings.hideEmptyTiles,
             onOpen = { if (appsLoaded) manualOpen = true },
-            onCloseBackground = { manualOpen = false },
             onLongPressSlot = { apps, slotIndex, pos ->
                 colorPickerSlot = slotIndex
                 colorPickerApps = apps
