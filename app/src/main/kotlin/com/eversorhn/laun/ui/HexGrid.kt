@@ -222,7 +222,6 @@ fun HexGrid(
      *  otherwise empty. */
     hideEmptyTiles: Boolean = false,
     onOpen: () -> Unit,
-    onCloseBackground: () -> Unit,
     onLongPressSlot: (List<AppInfo>, Int, Offset) -> Unit,
     onLongPressBackground: () -> Unit,
     /** A background press (open or closed stage) that travels straight up past
@@ -738,7 +737,13 @@ fun HexGrid(
                                     slotApps.size == 1 -> onLaunch(slotApps[0])
                                     slotApps.size > 1 -> onOpenFolder(slot!!, slotApps)
                                     slot != null -> onTapEmptySlot(slot)
-                                    else -> onCloseBackground()
+                                    // A plain tap on empty background (no tile here at all, not
+                                    // even a hidden one) while the grid is already open used to
+                                    // just collapse it back to STANDBY — now it reaches search the
+                                    // same way swiping up does, giving a second, simpler gesture
+                                    // for the same destination. The grid can still be collapsed via
+                                    // the system back gesture (see BackHandler in LauncherScreen).
+                                    else -> onSwipeUpBackground()
                                 }
                             }
                         } finally {

@@ -4,6 +4,15 @@ Built forward. Tracked clearly. Newest first.
 
 ---
 
+## 0.7.5 — 2026-08-28
+
+- App search can now also be opened by tapping any empty spot on the home screen that has no
+  tile on it — swiping up still works exactly as before, but now there are two ways to reach it.
+  With the grid open, tapping empty background used to just collapse the grid back to standby;
+  that's now search instead (the grid can still be collapsed the usual way, via the system back
+  gesture).
+- FAQ updated to mention the new tap-to-search option.
+
 ## 0.7.4 — 2026-08-26
 
 - Fixed the real cause of the edge-swipe glitch (tiles flashing/disappearing) reported on a
