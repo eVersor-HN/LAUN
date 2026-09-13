@@ -4,6 +4,19 @@ Built forward. Tracked clearly. Newest first.
 
 ---
 
+## 0.7.7 — 2026-09-13
+
+NEW
+
+- LAUN now ships its own tile icon set: 300 monochrome glyphs across 10 categories (Communication,
+  Social, Games, Files & Storage, Gallery & Photo, Music & Audio, Video & Streaming, Productivity,
+  Finance & Shopping, Utilities & System), drawn in the same angular vocabulary as the hex grid.
+  Long-press a tile, choose CHOOSE ICON, and LAUN ICONS now sits above your installed icon packs
+  as a source. The picker groups the set by category and searches by icon name or category.
+- A built-in glyph takes the tile's own accent color, so it follows whatever color that tile is
+  tagged with instead of always being white. It replaces the tile's name text the same way an
+  icon-pack icon does, and RESET ICON clears it again.
+
 ## 0.7.6 — 2026-09-13
 
 NEW

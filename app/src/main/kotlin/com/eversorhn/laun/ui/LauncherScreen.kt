@@ -44,6 +44,8 @@ import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.eversorhn.laun.data.AppInfo
+import com.eversorhn.laun.data.BUILTIN_ICONS_BY_ID
+import com.eversorhn.laun.data.BUILTIN_ICON_PACK
 import com.eversorhn.laun.data.IconPackRepository
 import com.eversorhn.laun.data.InstalledAppsRepository
 import com.eversorhn.laun.data.LauncherPrefs
@@ -51,6 +53,9 @@ import com.eversorhn.laun.ui.theme.LaunColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/** Render size for a built-in glyph rasterized onto a tile — same as a real app icon's. */
+private const val BUILTIN_ICON_BITMAP_PX = 128
 
 /** Reads the current system wallpaper; requires READ_EXTERNAL_STORAGE to be granted first. */
 private suspend fun loadWallpaperBitmap(context: Context): ImageBitmap? =
@@ -109,15 +114,29 @@ fun LauncherScreen(
         rawApps = repository.loadApps()
         appsLoaded = true
     }
-    // Icon-pack overrides (chosen from an installed icon pack's own catalogue) resolve to real
-    // bitmaps asynchronously — loaded once here per override set, cached by package name, so every
-    // consumer downstream sees the swapped icon the same way it already sees renamed labels.
+    // Icon overrides — either a drawable out of an installed icon pack's catalogue, or one of
+    // LAUN's own built-in glyphs — resolve to real bitmaps asynchronously, loaded once here per
+    // override set and cached by package name, so every consumer downstream sees the swapped icon
+    // the same way it already sees renamed labels.
+    //
+    // Built-in glyphs are vectors, so they're rasterized here in the tile's own accent color (the
+    // set was drawn to take the tile color); that's why this also re-runs when tileColors changes.
     val iconPackRepository = remember { IconPackRepository(context) }
     var iconOverrideBitmaps by remember { mutableStateOf<Map<String, ImageBitmap>>(emptyMap()) }
-    LaunchedEffect(settings.tileIconOverrides) {
+    LaunchedEffect(settings.tileIconOverrides, settings.tileColors) {
         iconOverrideBitmaps = settings.tileIconOverrides.mapNotNull { (pkg, override) ->
             val (iconPackPkg, drawableName) = override
-            iconPackRepository.loadIcon(iconPackPkg, drawableName)?.let { pkg to it }
+            val bitmap = if (iconPackPkg == BUILTIN_ICON_PACK) {
+                BUILTIN_ICONS_BY_ID[drawableName]?.let { icon ->
+                    val tint = settings.tileColors[pkg]
+                        ?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
+                        ?: Color.White
+                    withContext(Dispatchers.Default) { buildBuiltinIconBitmap(icon, BUILTIN_ICON_BITMAP_PX, tint) }
+                }
+            } else {
+                iconPackRepository.loadIcon(iconPackPkg, drawableName)
+            }
+            bitmap?.let { pkg to it }
         }.toMap()
     }
     // Custom names (long-press-to-rename in the app picker) and icon-pack overrides applied once
@@ -561,6 +580,7 @@ fun LauncherScreen(
         IconPackPickerSheet(
             immersiveEnabled = settings.immersiveEnabled,
             hasOverride = settings.tileIconOverrides.containsKey(pkg),
+            currentOverride = settings.tileIconOverrides[pkg],
             onPick = { iconPackPkg, drawableName ->
                 scope.launch { prefs.setTileIconOverride(pkg, iconPackPkg, drawableName) }
                 iconPickerPackage = null
