@@ -52,6 +52,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.eversorhn.laun.data.AppInfo
 import com.eversorhn.laun.data.BACKGROUND_ANIMATIONS
 import com.eversorhn.laun.data.MAX_HEX_COUNT
+import com.eversorhn.laun.data.OLED_BLACK_INDEX
 import com.eversorhn.laun.data.REVEAL_ANIMATIONS
 import com.eversorhn.laun.ui.theme.LaunColors
 import com.eversorhn.laun.ui.theme.MonoFontFamily
@@ -147,6 +148,8 @@ fun SettingsSheet(
     tileColors: Map<String, String>,
     wallpaperBitmap: ImageBitmap?,
     onSetSystemWallpaperBlack: () -> Unit,
+    hiddenAppCount: Int,
+    onHiddenAppsClick: () -> Unit,
     onFaqClick: () -> Unit,
     onAboutClick: () -> Unit,
     onResetClick: () -> Unit,
@@ -520,8 +523,8 @@ fun SettingsSheet(
                 }
             }
             // OLED BLACK is flat solid color — brightness/size controls don't apply to it, only
-            // to the other 8 animated concepts.
-            if (backgroundAnimation >= 0 && backgroundAnimation != BACKGROUND_ANIMATIONS.lastIndex) {
+            // to the actual animated concepts.
+            if (backgroundAnimation >= 0 && backgroundAnimation != OLED_BLACK_INDEX) {
                 SettingRow(
                     label = "INTENSITY",
                     value = "$backgroundIntensity%",
@@ -593,7 +596,12 @@ fun SettingsSheet(
                 letterSpacing = 0.6.sp,
                 modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
             )
-            LinkRow(text = "FAQ", topPadding = 14.dp, onClick = onFaqClick)
+            LinkRow(
+                text = if (hiddenAppCount > 0) "HIDDEN APPS ($hiddenAppCount)" else "HIDDEN APPS",
+                topPadding = 14.dp,
+                onClick = onHiddenAppsClick
+            )
+            LinkRow(text = "FAQ", onClick = onFaqClick)
             LinkRow(text = "ABOUT LAUNCHER", onClick = onAboutClick)
             LinkRow(text = "RESET TO DEFAULTS", onClick = onResetClick)
             }
@@ -635,10 +643,13 @@ fun SettingsSheet(
     }
 
     if (showBackgroundPicker) {
-        // -1 = NONE, -2 = the real Android wallpaper, 0.. = an index into BACKGROUND_ANIMATIONS.
-        val options = listOf("NONE", "ANDROID WALLPAPER") + BACKGROUND_ANIMATIONS
+        // Picker rows: NONE, ANDROID WALLPAPER, then every animated concept with OLED BLACK moved
+        // to the very end — its persisted index stays where it always was (see OLED_BLACK_INDEX),
+        // only the display order differs, mapped through displayOrder both ways.
+        val displayOrder = remember { BACKGROUND_ANIMATIONS.indices.filter { it != OLED_BLACK_INDEX } + OLED_BLACK_INDEX }
+        val options = listOf("NONE", "ANDROID WALLPAPER") + displayOrder.map { BACKGROUND_ANIMATIONS[it] }
         val selectedIndex = when {
-            backgroundAnimation >= 0 -> backgroundAnimation + 2
+            backgroundAnimation >= 0 -> displayOrder.indexOf(backgroundAnimation) + 2
             showWallpaper -> 1
             else -> 0
         }
@@ -651,12 +662,12 @@ fun SettingsSheet(
                     0 -> { onShowWallpaperChange(false); onBackgroundAnimationChange(-1) }
                     1 -> onShowWallpaperChange(true)
                     else -> {
-                        val animIndex = index - 2
+                        val animIndex = displayOrder[index - 2]
                         onBackgroundAnimationChange(animIndex)
                         // Selecting OLED BLACK also sets it as the real system wallpaper — the
                         // whole point of a true-black option is the OS-level power saving, which
                         // only the actual wallpaper (not just our in-app canvas) can deliver.
-                        if (animIndex == BACKGROUND_ANIMATIONS.lastIndex) onSetSystemWallpaperBlack()
+                        if (animIndex == OLED_BLACK_INDEX) onSetSystemWallpaperBlack()
                     }
                 }
             },

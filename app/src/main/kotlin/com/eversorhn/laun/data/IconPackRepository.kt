@@ -65,15 +65,24 @@ class IconPackRepository(private val context: Context) {
         }.getOrDefault(emptyMap())
     }
 
-    suspend fun loadIcon(iconPackPackage: String, drawableName: String): ImageBitmap? = withContext(Dispatchers.IO) {
-        runCatching {
-            val pkgContext = context.createPackageContext(iconPackPackage, 0)
-            val id = pkgContext.resources.getIdentifier(drawableName, "drawable", iconPackPackage)
-            if (id == 0) return@runCatching null
-            androidx.core.content.ContextCompat.getDrawable(pkgContext, id)
-                ?.toBitmap(width = ICON_SIZE_PX, height = ICON_SIZE_PX)
-                ?.asImageBitmap()
-        }.getOrNull()
+    /** Decoded icons by "pack/drawable" — the picker grid re-requests an icon every time its cell
+     *  scrolls back into view, and each miss is a cross-package Context + resource lookup + rasterize.
+     *  128px ARGB is 64KB, so 300 entries is a ~19MB ceiling, only reached while actually browsing. */
+    private val iconCache = android.util.LruCache<String, ImageBitmap>(300)
+
+    suspend fun loadIcon(iconPackPackage: String, drawableName: String): ImageBitmap? {
+        val key = "$iconPackPackage/$drawableName"
+        iconCache.get(key)?.let { return it }
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val pkgContext = context.createPackageContext(iconPackPackage, 0)
+                val id = pkgContext.resources.getIdentifier(drawableName, "drawable", iconPackPackage)
+                if (id == 0) return@runCatching null
+                androidx.core.content.ContextCompat.getDrawable(pkgContext, id)
+                    ?.toBitmap(width = ICON_SIZE_PX, height = ICON_SIZE_PX)
+                    ?.asImageBitmap()
+            }.getOrNull()?.also { iconCache.put(key, it) }
+        }
     }
 
     private fun openPackAsset(iconPackPackage: String, assetName: String): java.io.InputStream? =

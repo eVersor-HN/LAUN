@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,12 +27,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -45,7 +48,8 @@ import com.eversorhn.laun.ui.theme.MonoFontFamily
  * Swipe-up-anywhere search — a lighter, single-purpose cousin of [AppPickerSheet]: search, then
  * tap an app to launch it directly. Also auto-launches on its own the moment the query narrows
  * the list down to exactly one match, so typing enough of a name is enough on its own — no need
- * to also tap it.
+ * to also tap it. Long-pressing an entry offers to hide that app from this list (restored from
+ * Settings → SYSTEM → HIDDEN APPS).
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
@@ -53,9 +57,11 @@ fun AppLaunchSearchSheet(
     apps: List<AppInfo>,
     immersiveEnabled: Boolean,
     onLaunch: (AppInfo) -> Unit,
+    onHideApp: (AppInfo) -> Unit,
     onDismiss: () -> Unit
 ) {
     var query by remember { mutableStateOf("") }
+    var hideTarget by remember { mutableStateOf<AppInfo?>(null) }
     val filtered = remember(apps, query) {
         if (query.isBlank()) apps else apps.filter { it.label.contains(query, ignoreCase = true) }
     }
@@ -142,7 +148,10 @@ fun AppLaunchSearchSheet(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { onLaunch(app) }
+                                .combinedClickable(
+                                    onClick = { onLaunch(app) },
+                                    onLongClick = { hideTarget = app }
+                                )
                                 .padding(horizontal = 20.dp, vertical = 14.dp),
                             horizontalArrangement = Arrangement.Start
                         ) {
@@ -154,6 +163,71 @@ fun AppLaunchSearchSheet(
                             )
                         }
                     }
+                }
+            }
+        }
+    }
+
+    // Long-press confirmation — one deliberate step before an app vanishes from the list, since
+    // a long-press that was meant as a slow tap would otherwise silently hide the wrong app.
+    hideTarget?.let { app ->
+        Dialog(onDismissRequest = { hideTarget = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            HideSystemBarsWhileShown(immersiveEnabled)
+
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 300.dp)
+                    .background(LaunColors.bg2)
+                    .border(1.dp, LaunColors.border)
+                    .padding(20.dp)
+            ) {
+                Text(
+                    text = "HIDE FROM SEARCH",
+                    color = LaunColors.dim,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 10.sp,
+                    letterSpacing = 1.sp
+                )
+                Text(
+                    text = app.label,
+                    color = LaunColors.fg,
+                    fontFamily = HeadFontFamily,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(top = 10.dp)
+                )
+                Text(
+                    text = "RESTORE ANY TIME VIA SETTINGS → SYSTEM → HIDDEN APPS",
+                    color = LaunColors.dim,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 9.sp,
+                    letterSpacing = 0.6.sp,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "CANCEL",
+                        color = LaunColors.dim,
+                        fontFamily = MonoFontFamily,
+                        fontSize = 10.sp,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.clickable { hideTarget = null }
+                    )
+                    Text(
+                        text = "HIDE",
+                        color = LaunColors.fg,
+                        fontFamily = MonoFontFamily,
+                        fontSize = 10.sp,
+                        letterSpacing = 1.sp,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier.clickable {
+                            onHideApp(app)
+                            hideTarget = null
+                        }
+                    )
                 }
             }
         }

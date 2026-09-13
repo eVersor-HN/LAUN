@@ -60,17 +60,16 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private fun readBatteryPercent(context: Context): Int {
+/** (percent, charging) from the sticky battery broadcast — one query for both, rather than two
+ *  separate registerReceiver(null, ...) round-trips for what's the same Intent. */
+private fun readBatteryState(context: Context): Pair<Int, Boolean> {
     val intent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
     val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
     val scale = intent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
-    return if (level >= 0 && scale > 0) (level * 100 / scale) else 0
-}
-
-private fun readCharging(context: Context): Boolean {
-    val intent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
     val status = intent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
-    return status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
+    val percent = if (level >= 0 && scale > 0) (level * 100 / scale) else 0
+    val charging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
+    return percent to charging
 }
 
 private fun readNetworkConnected(context: Context): Boolean {
@@ -136,9 +135,12 @@ fun StatusBar(
 
     // Both loops only run while LAUN is actually on screen — without this they'd keep ticking
     // forever in the background, since stopping the Activity doesn't destroy the Compose
-    // coroutine scope that owns them.
+    // coroutine scope that owns them. They're also gated on their element actually being shown:
+    // a launcher is RESUMED for most of the phone's waking life, so a once-a-second clock tick
+    // (or 30/s with milliseconds on) driving a Text nobody can see is pure wasted wakeups.
     val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(lifecycleOwner, showClockMillis) {
+    LaunchedEffect(lifecycleOwner, showClock, showClockMillis) {
+        if (!showClock) return@LaunchedEffect
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             val pattern = if (showClockMillis) "HH:mm:ss.SSS" else "HH:mm:ss"
             val fmt = SimpleDateFormat(pattern, Locale.getDefault())
@@ -151,7 +153,8 @@ fun StatusBar(
             }
         }
     }
-    LaunchedEffect(lifecycleOwner) {
+    LaunchedEffect(lifecycleOwner, showCursor) {
+        if (!showCursor) return@LaunchedEffect
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (true) {
                 delay(500)
@@ -193,8 +196,10 @@ fun StatusBar(
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> {
-                    battery = readBatteryPercent(context)
-                    charging = readCharging(context)
+                    readBatteryState(context).let { (percent, isCharging) ->
+                        battery = percent
+                        charging = isCharging
+                    }
                     connected = readNetworkConnected(context)
                     wifiConnected = readWifiConnected(context)
                     bluetoothOn = readBluetoothEnabled(context)

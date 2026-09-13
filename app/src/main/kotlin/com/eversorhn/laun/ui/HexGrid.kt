@@ -91,10 +91,13 @@ private const val SWIPE_SIDE_THRESHOLD_DP = 24f
  * matching a browser's clip-path-aware elementFromPoint(), which the demo relies on.
  */
 private fun hexContains(point: Offset, tile: TileLayout, density: Density): Boolean {
-    val wPx = with(density) { tile.widthDp.toPx() }
-    val hPx = with(density) { tile.heightDp.toPx() }
-    val cxPx = with(density) { tile.centerXDp.dp.toPx() }
-    val cyPx = with(density) { tile.centerYDp.dp.toPx() }
+    // Plain multiplies — this runs for every tile on every pointer move while a press is being
+    // resolved, and boxing four Dp values per tile per event just to call toPx() added up.
+    val d = density.density
+    val wPx = tile.widthDp.value * d
+    val hPx = tile.heightDp.value * d
+    val cxPx = tile.centerXDp * d
+    val cyPx = tile.centerYDp * d
     val dx = abs(point.x - cxPx) / TILE_RENDER_SCALE
     val dy = abs(point.y - cyPx) / TILE_RENDER_SCALE
     val halfW = wPx / 2f
@@ -433,12 +436,9 @@ fun HexGrid(
         // to whatever's behind it (background). [includeHidden] is the one exception: mid-drag
         // target-seeking (see dragTargetSlot below) still wants every genuinely empty cell as a
         // valid drop zone, and the target it lands on is revealed immediately as feedback anyway.
+        val occupiedTiles = remember(tiles) { tiles.filter { it.apps.isNotEmpty() } }
         fun hitTile(point: Offset, includeHidden: Boolean = false): Int? {
-            val candidates = if (includeHidden || !hideEmptyTiles || revealHiddenEmpty) {
-                tiles
-            } else {
-                tiles.filter { it.apps.isNotEmpty() }
-            }
+            val candidates = if (includeHidden || !hideEmptyTiles || revealHiddenEmpty) tiles else occupiedTiles
             return candidates.lastOrNull { hexContains(point, it, density) }?.index
         }
         // Snap mode's whole point is a forgiving target — released anywhere, not just precisely
@@ -446,12 +446,14 @@ fun HexGrid(
         // is closest to the point instead of requiring the point to land inside a hex shape at
         // all. Defaults to the honeycomb's own tiles (plain Snap Mode); free tile placement passes
         // tiles + extraCells too, so a release can also land on genuinely empty screen space.
-        fun nearestTile(point: Offset, candidates: List<TileLayout> = tiles): Int? =
-            candidates.minByOrNull { tile ->
-                val cx = with(density) { tile.centerXDp.dp.toPx() }
-                val cy = with(density) { tile.centerYDp.dp.toPx() }
-                hypot((point.x - cx).toDouble(), (point.y - cy).toDouble())
+        fun nearestTile(point: Offset, candidates: List<TileLayout> = tiles): Int? {
+            val d = density.density
+            return candidates.minByOrNull { tile ->
+                val dx = point.x - tile.centerXDp * d
+                val dy = point.y - tile.centerYDp * d
+                dx * dx + dy * dy // squared is enough for argmin, skips a sqrt per tile per event
             }?.index
+        }
 
         var activeSlot by remember { mutableStateOf<Int?>(null) }
         var pressActive by remember { mutableStateOf(false) }

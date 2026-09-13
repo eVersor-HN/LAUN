@@ -4,6 +4,75 @@ Built forward. Tracked clearly. Newest first.
 
 ---
 
+## 0.7.6 — 2026-09-13
+
+NEW
+
+- Hide apps from the swipe-up search list — long-press an entry there and confirm. Hidden apps
+  are restored individually from Settings → SYSTEM → HIDDEN APPS (tap one to show it again).
+  Hiding only trims the search list: tiles already assigned to a hidden app keep working, and
+  the tile picker still offers it.
+- 9 new tile reveal animations (Settings → ANIMATION → TILE REVEAL), on top of the existing 5:
+  HOLO SCANLINE (materializes behind a sweeping scan line), IRIS APERTURE (a hex-shaped iris
+  opens from the center), WIREFRAME BUILD (the outline is traced first, the face fades in under
+  it), PIXEL DECODE (a grid of black cells resolves with a bright decode front), GLITCH SLICE
+  (horizontal slices land misaligned and snap into place), SHUTTER BLINDS (four louvres wipe
+  open in a cascade), HEX PULSE (hexagonal rings broadcast outward), GYRO SPIN (a full turn
+  while growing in), DEPLOY DROP (drops in from above with a landing bounce).
+- 9 new animated backgrounds (Settings → BACKGROUND → SOURCE), on top of the existing 8: HEX MESH
+  (a honeycomb with cells lighting up), RADAR SWEEP (rotating sweep with range rings and decaying
+  blips), DATA RAIN (falling hex glyph streams), CRT SCANLINES (raster lines, a rolling refresh
+  band, rare tearing, vignette), HORIZON GRID (perspective floor and ceiling rushing toward you),
+  WAVEFORM (three oscilloscope traces with a trigger cursor), DATA STREAM (upload streaks rising),
+  BINARY NOISE (a sparse field of blinking 0/1s), ORBITAL RINGS (precessing orbits with
+  satellites). OLED BLACK is now listed last; existing selections are unaffected.
+- Existing backgrounds sharpened: NEURO LINKS nodes breathe and signal pulses travel along the
+  links; CIRCUIT TRACE has solder pads at every corner and a bright tail behind each packet;
+  WARP TUNNEL gets rings rushing outward for real forward motion; SERVER GRID has a diagnostic
+  sweep walking down the rack; THREAT PING MAP snaps target brackets onto each hit; STARFIELD
+  DRIFT's near stars streak.
+
+FIXED
+
+- Tile reveal animations never actually animated on devices with the system "Animator duration
+  scale" set to off (a common Developer-options tweak): Compose scaled every tween to zero length,
+  so tiles just popped in one after another with no motion regardless of ANIMATION SPEED. The
+  reveal now runs under a fixed motion scale, and ANIMATION SPEED alone decides its pace (INSTANT
+  still means instant).
+- Tapping an option in the TILE REVEAL picker didn't replay the preview — the replay interrupted
+  the closing fade after 40ms and resumed the reveal from ~99%, so nothing visible happened. A
+  fresh open now always plays from the start (this also covers a quick re-tap on the home screen
+  mid-collapse).
+- With ANDROID WALLPAPER as the background, every cold start briefly ran with the default "no
+  wallpaper" setting before the saved one loaded — and that path paints the real system wallpaper
+  black, so the wallpaper then loaded... already black. The black-out now waits for the saved
+  setting to actually load.
+- App search, the icon-pack picker and the hidden-apps list weren't closed by the "came home"
+  resets like every other sheet, so a home gesture with one of them open could leave it stuck on
+  screen. All overlays now share one reset.
+
+FASTER / LEANER
+
+- Sliders no longer write to disk on every pixel of drag: each slider-driven setting (SIZE, COUNT,
+  SPACING, margins, delays, ICON SIZE, ANIMATION SPEED, OPACITY, INTENSITY, EFFECT SIZE, per-tile
+  SIZE) reads from an instant local value and commits to storage once the drag settles (~150ms) —
+  one file write per drag instead of dozens, and every slider now moves the grid or background in
+  lockstep with the finger instead of trailing the write queue.
+- Faster cold start: the installed-app list (labels + icons) loads across all CPU cores instead of
+  one app at a time. The grid is blocked on exactly this, so it's the bulk of the wait after a
+  process restart.
+- Less battery while idle: the status bar's clock and cursor-blink loops only run while their
+  element is actually shown, instead of ticking (30x/s with milliseconds on) into an invisible
+  element.
+- Smoother animations: QUANTUM FLICKER no longer allocates its keyframe table on every frame of
+  every tile, CIRCUIT TRACE precomputes each trace's path and segment table once instead of
+  rebuilding them per frame, and per-tile easing curves are shared constants.
+- Snappier tile hit-testing while pressing or dragging (no per-tile unit boxing, squared-distance
+  nearest-tile search, pre-filtered occupied-tile list for HIDE EMPTY TILES).
+- The icon-pack picker caches decoded icons, so scrolling back over already-seen cells no longer
+  re-rasterizes them.
+- FAQ updated for hiding apps.
+
 ## 0.7.5 — 2026-08-28
 
 - App search can now also be opened by tapping any empty spot on the home screen that has no

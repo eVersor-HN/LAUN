@@ -9,6 +9,9 @@ import android.os.Build
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.drawable.toBitmap
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 
 /** 28dp tile icon at up to xxxhdpi (~4x) plus headroom — plenty for a sharp render. */
@@ -30,19 +33,31 @@ class InstalledAppsRepository(private val context: Context) {
             pm.queryIntentActivities(intent, 0)
         }
 
-        resolveInfos
-            .distinctBy { it.activityInfo.packageName }
-            .map { info ->
-                AppInfo(
-                    packageName = info.activityInfo.packageName,
-                    label = info.loadLabel(pm).toString(),
-                    // Tiles only ever render this at 28dp — decoding at native adaptive-icon
-                    // resolution (often 300px+) wastes memory across every installed app, not
-                    // just the ones assigned to a slot.
-                    icon = info.loadIcon(pm).toBitmap(width = ICON_SIZE_PX, height = ICON_SIZE_PX).asImageBitmap(),
-                    activityName = info.activityInfo.name
-                )
-            }
+        val unique = resolveInfos.distinctBy { it.activityInfo.packageName }
+        // Label + icon loading is the slow part of cold start (a PackageManager round-trip plus an
+        // adaptive-icon rasterize per app, ~150+ apps on a typical phone) and the grid stays blank
+        // until it finishes. The per-app work is independent, so it's fanned out across
+        // Dispatchers.Default's worker threads in chunks instead of run strictly one app at a time
+        // on a single coroutine — the wall-clock time drops roughly by the core count.
+        val chunkSize = maxOf(8, unique.size / (Runtime.getRuntime().availableProcessors() * 2).coerceAtLeast(1))
+        coroutineScope {
+            unique.chunked(chunkSize).map { chunk ->
+                async {
+                    chunk.map { info ->
+                        AppInfo(
+                            packageName = info.activityInfo.packageName,
+                            label = info.loadLabel(pm).toString(),
+                            // Tiles only ever render this at 28dp — decoding at native adaptive-icon
+                            // resolution (often 300px+) wastes memory across every installed app, not
+                            // just the ones assigned to a slot.
+                            icon = info.loadIcon(pm).toBitmap(width = ICON_SIZE_PX, height = ICON_SIZE_PX).asImageBitmap(),
+                            activityName = info.activityInfo.name
+                        )
+                    }
+                }
+            }.awaitAll()
+        }
+            .flatten()
             .sortedBy { it.label.lowercase() }
     }
 

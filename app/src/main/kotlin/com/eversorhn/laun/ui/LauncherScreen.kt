@@ -170,11 +170,31 @@ fun LauncherScreen(
     var appPickerSlot by remember { mutableStateOf<Int?>(null) }
     var showAppSearch by remember { mutableStateOf(false) }
     var folderSlot by remember { mutableStateOf<Int?>(null) }
+    var showHiddenApps by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
     var showFaq by remember { mutableStateOf(false) }
     var showLauncherHint by remember { mutableStateOf(false) }
     var showGestureHint by remember { mutableStateOf(false) }
     var showBatteryHint by remember { mutableStateOf(false) }
+    // Every overlay in one place, so the two "we came home" resets below (ON_STOP and the
+    // singleTask onNewIntent path) can't drift apart again — they previously each listed a
+    // different subset and both missed app search and the icon picker entirely, leaving those
+    // stuck open after a home gesture.
+    fun closeAllOverlays() {
+        manualOpen = false
+        showSettings = false
+        colorPickerSlot = null
+        iconPickerPackage = null
+        appPickerSlot = null
+        showAppSearch = false
+        folderSlot = null
+        showHiddenApps = false
+        showAbout = false
+        showFaq = false
+        showLauncherHint = false
+        showGestureHint = false
+        showBatteryHint = false
+    }
     // Gated on settingsState (nullable) rather than settings.hasShownDefaultLauncherHint directly —
     // collectAsState's `initial` default (hasShownDefaultLauncherHint = false) would otherwise make
     // this fire on every cold start before the real, already-persisted value loads from DataStore.
@@ -211,13 +231,31 @@ fun LauncherScreen(
         }
     }
 
-    // Local, immediate copies of size/count: the slider must resize the grid live, on every
-    // pixel of drag — round-tripping every change through DataStore's async Flow first would
-    // lag. These drive the grid directly; the DataStore write underneath is fire-and-forget.
-    var liveHexSizeDp by remember { mutableStateOf(settings.hexSizeDp) }
-    var liveHexCount by remember { mutableStateOf(settings.hexCount) }
-    LaunchedEffect(settings.hexSizeDp) { liveHexSizeDp = settings.hexSizeDp }
-    LaunchedEffect(settings.hexCount) { liveHexCount = settings.hexCount }
+    // Every slider-driven setting is read from a local live copy and written to DataStore only
+    // once the drag settles — see rememberLiveSetting for why (one file write per drag instead of
+    // one per pixel, and the grid follows the finger instead of the write queue).
+    val (liveHexSizeDp, setLiveHexSizeDp) = rememberLiveSetting(settings.hexSizeDp) { prefs.setHexSize(it) }
+    val (liveHexCount, setLiveHexCount) = rememberLiveSetting(settings.hexCount) { prefs.setHexCount(it) }
+    val (liveTileSpacingDp, setLiveTileSpacingDp) = rememberLiveSetting(settings.tileSpacingDp) { prefs.setTileSpacing(it) }
+    val (liveMarginTopDp, setLiveMarginTopDp) = rememberLiveSetting(settings.marginTopDp) { prefs.setMarginTop(it) }
+    val (liveMarginBottomDp, setLiveMarginBottomDp) = rememberLiveSetting(settings.marginBottomDp) { prefs.setMarginBottom(it) }
+    val (liveMarginStartDp, setLiveMarginStartDp) = rememberLiveSetting(settings.marginStartDp) { prefs.setMarginStart(it) }
+    val (liveMarginEndDp, setLiveMarginEndDp) = rememberLiveSetting(settings.marginEndDp) { prefs.setMarginEnd(it) }
+    val (liveColorMenuAutoOpenSeconds, setLiveColorMenuAutoOpenSeconds) =
+        rememberLiveSetting(settings.colorMenuAutoOpenSeconds) { prefs.setColorMenuAutoOpenSeconds(it) }
+    val (liveMainMenuAutoOpenSeconds, setLiveMainMenuAutoOpenSeconds) =
+        rememberLiveSetting(settings.mainMenuAutoOpenSeconds) { prefs.setMainMenuAutoOpenSeconds(it) }
+    val (liveIconSizePercent, setLiveIconSizePercent) = rememberLiveSetting(settings.iconSizePercent) { prefs.setIconSizePercent(it) }
+    val (liveAnimationSpeed, setLiveAnimationSpeed) = rememberLiveSetting(settings.animationSpeed) { prefs.setAnimationSpeed(it) }
+    val (liveBackgroundOpacity, setLiveBackgroundOpacity) = rememberLiveSetting(settings.backgroundOpacity) { prefs.setBackgroundOpacity(it) }
+    val (liveBackgroundIntensity, setLiveBackgroundIntensity) = rememberLiveSetting(settings.backgroundIntensity) { prefs.setBackgroundIntensity(it) }
+    val (liveBackgroundEffectSize, setLiveBackgroundEffectSize) = rememberLiveSetting(settings.backgroundEffectSize) { prefs.setBackgroundEffectSize(it) }
+    // Per-slot SIZE (color menu slider) — the whole map is the live value, but only the slot the
+    // user is actually dragging gets written back; the others are untouched by definition.
+    var pendingTileSizeSlot by remember { mutableStateOf<Int?>(null) }
+    val (liveTileSizeOverrides, setLiveTileSizeOverrides) = rememberLiveSetting(settings.tileSizeOverrides) { map ->
+        pendingTileSizeSlot?.let { slot -> prefs.setTileSizeOverride(slot, map[slot]) }
+    }
 
     // Whether the grid actually had to shrink tiles below the requested size to keep every
     // tile on screen — tiles must never leave the screen, so this can happen at any live
@@ -232,18 +270,7 @@ fun LauncherScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) {
-                manualOpen = false
-                showSettings = false
-                colorPickerSlot = null
-                appPickerSlot = null
-                folderSlot = null
-                showAbout = false
-                showFaq = false
-                showLauncherHint = false
-                showGestureHint = false
-                showBatteryHint = false
-            }
+            if (event == Lifecycle.Event.ON_STOP) closeAllOverlays()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -253,13 +280,7 @@ fun LauncherScreen(
     // while sitting on the home screen, so a repeated "go home" gesture redelivers the HOME
     // intent via onNewIntent instead of stopping/restarting the activity — see MainActivity.
     LaunchedEffect(resetSignal) {
-        if (resetSignal > 0) {
-            manualOpen = false
-            showSettings = false
-            colorPickerSlot = null
-            appPickerSlot = null
-            folderSlot = null
-        }
+        if (resetSignal > 0) closeAllOverlays()
     }
 
     val appsByPackage = remember(apps) { apps.associateBy { it.packageName } }
@@ -293,14 +314,21 @@ fun LauncherScreen(
     // own permission check wants the former, but a separate AppOps-level check underneath it
     // wants the latter — confirmed on-device that either one alone isn't enough.
     var wallpaperBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
-    val wallpaperPermissions = arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.READ_MEDIA_IMAGES)
+    val wallpaperPermissions = remember { arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.READ_MEDIA_IMAGES) }
     val wallpaperPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
         if (results.values.all { it }) reloadScope.launch { wallpaperBitmap = loadWallpaperBitmap(context) }
     }
-    LaunchedEffect(settings.showWallpaper) {
-        if (!settings.showWallpaper) {
+    // Keyed on the *loaded* value (null until DataStore has emitted), not `settings.showWallpaper`
+    // — that falls back to the default `false` for the first few ms of every cold start, which
+    // used to run the "not showing wallpaper → paint the system wallpaper black" branch below
+    // before the user's real `true` arrived. The wallpaper then loaded... already black. Waiting
+    // for the real value is the only thing that makes "show Android wallpaper" survive a restart.
+    val loadedShowWallpaper = settingsState?.showWallpaper
+    LaunchedEffect(loadedShowWallpaper) {
+        if (loadedShowWallpaper == null) return@LaunchedEffect
+        if (!loadedShowWallpaper) {
             wallpaperBitmap = null
             // No real wallpaper shown in-app — force the actual system wallpaper black too, so
             // a task-switch or recents transition never flashes the phone's real wallpaper
@@ -360,7 +388,7 @@ fun LauncherScreen(
                 }
             }
     ) {
-        val backgroundOpacityFraction = settings.backgroundOpacity / 100f
+        val backgroundOpacityFraction = liveBackgroundOpacity / 100f
         if (settings.backgroundAnimation >= 0) {
             val wallpaperTint = settings.backgroundColor
                 ?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
@@ -368,8 +396,8 @@ fun LauncherScreen(
             AnimatedWallpaper(
                 kind = settings.backgroundAnimation,
                 opacity = backgroundOpacityFraction,
-                intensity = settings.backgroundIntensity / 100f,
-                sizeScale = settings.backgroundEffectSize / 100f,
+                intensity = liveBackgroundIntensity / 100f,
+                sizeScale = liveBackgroundEffectSize / 100f,
                 tint = wallpaperTint,
                 modifier = Modifier.fillMaxSize()
             )
@@ -400,9 +428,9 @@ fun LauncherScreen(
             hexSizeDp = liveHexSizeDp,
             tileColors = settings.tileColors,
             showIcons = settings.showAppIcons,
-            iconSizePercent = settings.iconSizePercent,
+            iconSizePercent = liveIconSizePercent,
             revealAnimation = settings.revealAnimation,
-            animationSpeed = settings.animationSpeed,
+            animationSpeed = liveAnimationSpeed,
             isOpen = isOpen,
             freePositionMode = settings.freePositionMode,
             snapMode = settings.snapMode,
@@ -411,14 +439,14 @@ fun LauncherScreen(
             onVisibleExtraIndicesChange = { visiblePinnedIndices = it },
             freeformPositions = freeformPositions,
             onFreeformPositionChange = { index, pos -> scope.launch { prefs.setFreeformPosition(index, pos.x, pos.y) } },
-            colorMenuAutoOpenSeconds = settings.colorMenuAutoOpenSeconds,
-            mainMenuAutoOpenSeconds = settings.mainMenuAutoOpenSeconds,
-            tileSizeOverrides = settings.tileSizeOverrides,
-            tileSpacingDp = settings.tileSpacingDp,
-            marginTopDp = settings.marginTopDp,
-            marginBottomDp = settings.marginBottomDp,
-            marginStartDp = settings.marginStartDp,
-            marginEndDp = settings.marginEndDp,
+            colorMenuAutoOpenSeconds = liveColorMenuAutoOpenSeconds,
+            mainMenuAutoOpenSeconds = liveMainMenuAutoOpenSeconds,
+            tileSizeOverrides = liveTileSizeOverrides,
+            tileSpacingDp = liveTileSpacingDp,
+            marginTopDp = liveMarginTopDp,
+            marginBottomDp = liveMarginBottomDp,
+            marginStartDp = liveMarginStartDp,
+            marginEndDp = liveMarginEndDp,
             hideEmptyTiles = settings.hideEmptyTiles,
             onOpen = { if (appsLoaded) manualOpen = true },
             onLongPressSlot = { apps, slotIndex, pos ->
@@ -492,9 +520,15 @@ fun LauncherScreen(
         ColorPickerSheet(
             anchor = colorPickerAnchor,
             slotApps = slotApps,
-            sizePercent = settings.tileSizeOverrides[slot] ?: 100,
-            onSizeChange = { percent -> scope.launch { prefs.setTileSizeOverride(slot, percent) } },
-            onResetSize = { scope.launch { prefs.setTileSizeOverride(slot, null) } },
+            sizePercent = liveTileSizeOverrides[slot] ?: 100,
+            onSizeChange = { percent ->
+                pendingTileSizeSlot = slot
+                setLiveTileSizeOverrides(liveTileSizeOverrides + (slot to percent))
+            },
+            onResetSize = {
+                pendingTileSizeSlot = slot
+                setLiveTileSizeOverrides(liveTileSizeOverrides - slot)
+            },
             onPick = { hex ->
                 colorKey?.let { pkg -> scope.launch { prefs.setTileColor(pkg, hex) } }
                 colorPickerSlot = null
@@ -567,15 +601,36 @@ fun LauncherScreen(
         )
     }
 
+    // Hidden apps only leave the search list — a tile already pointing at one keeps launching it,
+    // and the tile picker still offers it (hiding is about decluttering search, not disowning the
+    // app). Filtered against the live installed set so an uninstalled-but-still-hidden package
+    // never shows up as a ghost row in the HIDDEN APPS list either.
+    val searchableApps = remember(apps, settings.hiddenApps) {
+        if (settings.hiddenApps.isEmpty()) apps else apps.filterNot { it.packageName in settings.hiddenApps }
+    }
+    val hiddenAppList = remember(apps, settings.hiddenApps) {
+        if (settings.hiddenApps.isEmpty()) emptyList() else apps.filter { it.packageName in settings.hiddenApps }
+    }
+
     if (showAppSearch) {
         AppLaunchSearchSheet(
-            apps = apps,
+            apps = searchableApps,
             immersiveEnabled = settings.immersiveEnabled,
             onLaunch = { app ->
                 showAppSearch = false
                 repository.launch(app)
             },
+            onHideApp = { app -> scope.launch { prefs.setAppHidden(app.packageName, true) } },
             onDismiss = { showAppSearch = false }
+        )
+    }
+
+    if (showHiddenApps) {
+        HiddenAppsSheet(
+            hiddenApps = hiddenAppList,
+            immersiveEnabled = settings.immersiveEnabled,
+            onUnhide = { app -> scope.launch { prefs.setAppHidden(app.packageName, false) } },
+            onDismiss = { showHiddenApps = false }
         )
     }
 
@@ -591,9 +646,9 @@ fun LauncherScreen(
     if (showSettings) {
         SettingsSheet(
             hexSizeDp = liveHexSizeDp,
-            onHexSizeChange = { liveHexSizeDp = it; scope.launch { prefs.setHexSize(it) } },
+            onHexSizeChange = setLiveHexSizeDp,
             hexCount = liveHexCount,
-            onHexCountChange = { liveHexCount = it; scope.launch { prefs.setHexCount(it) } },
+            onHexCountChange = setLiveHexCount,
             didShrinkToFit = didShrinkToFit,
             freePositionMode = settings.freePositionMode,
             onFreePositionModeChange = { scope.launch { prefs.setFreePositionMode(it) } },
@@ -601,22 +656,22 @@ fun LauncherScreen(
             onSnapModeChange = { scope.launch { prefs.setSnapMode(it) } },
             freeTilePlacement = settings.freeTilePlacement,
             onFreeTilePlacementChange = { scope.launch { prefs.setFreeTilePlacement(it) } },
-            tileSpacingDp = settings.tileSpacingDp,
-            onTileSpacingChange = { scope.launch { prefs.setTileSpacing(it) } },
-            marginTopDp = settings.marginTopDp,
-            onMarginTopChange = { scope.launch { prefs.setMarginTop(it) } },
-            marginBottomDp = settings.marginBottomDp,
-            onMarginBottomChange = { scope.launch { prefs.setMarginBottom(it) } },
-            marginStartDp = settings.marginStartDp,
-            onMarginStartChange = { scope.launch { prefs.setMarginStart(it) } },
-            marginEndDp = settings.marginEndDp,
-            onMarginEndChange = { scope.launch { prefs.setMarginEnd(it) } },
+            tileSpacingDp = liveTileSpacingDp,
+            onTileSpacingChange = setLiveTileSpacingDp,
+            marginTopDp = liveMarginTopDp,
+            onMarginTopChange = setLiveMarginTopDp,
+            marginBottomDp = liveMarginBottomDp,
+            onMarginBottomChange = setLiveMarginBottomDp,
+            marginStartDp = liveMarginStartDp,
+            onMarginStartChange = setLiveMarginStartDp,
+            marginEndDp = liveMarginEndDp,
+            onMarginEndChange = setLiveMarginEndDp,
             hideEmptyTiles = settings.hideEmptyTiles,
             onHideEmptyTilesChange = { scope.launch { prefs.setHideEmptyTiles(it) } },
-            colorMenuAutoOpenSeconds = settings.colorMenuAutoOpenSeconds,
-            onColorMenuAutoOpenSecondsChange = { scope.launch { prefs.setColorMenuAutoOpenSeconds(it) } },
-            mainMenuAutoOpenSeconds = settings.mainMenuAutoOpenSeconds,
-            onMainMenuAutoOpenSecondsChange = { scope.launch { prefs.setMainMenuAutoOpenSeconds(it) } },
+            colorMenuAutoOpenSeconds = liveColorMenuAutoOpenSeconds,
+            onColorMenuAutoOpenSecondsChange = setLiveColorMenuAutoOpenSeconds,
+            mainMenuAutoOpenSeconds = liveMainMenuAutoOpenSeconds,
+            onMainMenuAutoOpenSecondsChange = setLiveMainMenuAutoOpenSeconds,
             hudVisible = settings.hudVisible,
             onHudVisibleChange = { scope.launch { prefs.setHudVisible(it) } },
             hudShowStatus = settings.hudShowStatus,
@@ -646,28 +701,30 @@ fun LauncherScreen(
             onAlwaysShowGridChange = { scope.launch { prefs.setAlwaysShowGrid(it) } },
             showAppIcons = settings.showAppIcons,
             onShowAppIconsChange = { scope.launch { prefs.setShowAppIcons(it) } },
-            iconSizePercent = settings.iconSizePercent,
-            onIconSizePercentChange = { scope.launch { prefs.setIconSizePercent(it) } },
+            iconSizePercent = liveIconSizePercent,
+            onIconSizePercentChange = setLiveIconSizePercent,
             revealAnimation = settings.revealAnimation,
             onRevealAnimationChange = { scope.launch { prefs.setRevealAnimation(it) } },
-            animationSpeed = settings.animationSpeed,
-            onAnimationSpeedChange = { scope.launch { prefs.setAnimationSpeed(it) } },
+            animationSpeed = liveAnimationSpeed,
+            onAnimationSpeedChange = setLiveAnimationSpeed,
             showWallpaper = settings.showWallpaper,
             onShowWallpaperChange = { scope.launch { prefs.setShowWallpaper(it) } },
             backgroundAnimation = settings.backgroundAnimation,
             onBackgroundAnimationChange = { scope.launch { prefs.setBackgroundAnimation(it) } },
-            backgroundOpacity = settings.backgroundOpacity,
-            onBackgroundOpacityChange = { scope.launch { prefs.setBackgroundOpacity(it) } },
-            backgroundIntensity = settings.backgroundIntensity,
-            onBackgroundIntensityChange = { scope.launch { prefs.setBackgroundIntensity(it) } },
-            backgroundEffectSize = settings.backgroundEffectSize,
-            onBackgroundEffectSizeChange = { scope.launch { prefs.setBackgroundEffectSize(it) } },
+            backgroundOpacity = liveBackgroundOpacity,
+            onBackgroundOpacityChange = setLiveBackgroundOpacity,
+            backgroundIntensity = liveBackgroundIntensity,
+            onBackgroundIntensityChange = setLiveBackgroundIntensity,
+            backgroundEffectSize = liveBackgroundEffectSize,
+            onBackgroundEffectSizeChange = setLiveBackgroundEffectSize,
             backgroundColor = settings.backgroundColor,
             onBackgroundColorChange = { scope.launch { prefs.setBackgroundColor(it) } },
             slots = slots,
             tileColors = settings.tileColors,
             wallpaperBitmap = wallpaperBitmap,
             onSetSystemWallpaperBlack = { scope.launch { setSystemWallpaperBlack(context) } },
+            hiddenAppCount = hiddenAppList.size,
+            onHiddenAppsClick = { showHiddenApps = true },
             onFaqClick = { showFaq = true },
             onAboutClick = { showAbout = true },
             onResetClick = { scope.launch { prefs.resetSettings() } },

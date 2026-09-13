@@ -4,7 +4,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -36,17 +35,6 @@ val HeadFontFamily = FontFamily(
 )
 val MonoFontFamily = FontFamily(
     Font(R.font.jetbrains_mono_regular, FontWeight.Normal)
-)
-
-val TileNameStyle = TextStyle(
-    fontFamily = HeadFontFamily,
-    fontWeight = FontWeight.SemiBold,
-    color = LaunColors.fg
-)
-
-val MonoStyle = TextStyle(
-    fontFamily = MonoFontFamily,
-    color = LaunColors.dim
 )
 
 @Composable

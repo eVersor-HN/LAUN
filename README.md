@@ -19,10 +19,11 @@ STATUS / LICENSE
 
 Open-source software licensed under the GNU General Public License v3.0.
 
-Early-stage. The Android app covers the core launcher loop — real installed
-apps, real launching, HOME registration, persistence, immersive mode. Search,
-folders, notification badges, wallpaper support, and accessibility polish are
-not built yet.
+Actively developed and daily-driven. The Android app covers the full launcher
+loop — real installed apps, real launching, HOME registration, persistence,
+fullscreen mode, app search, folders, icon packs, animated or system
+wallpapers, and a configurable status readout. Notification badges and
+accessibility polish are not built yet.
 
 ------------------------------------------------------------
 SUPPORT THE PROJECT
@@ -70,16 +71,34 @@ FEATURES
 
 CONTROL
 - Empty by default — the launcher only appears when you ask for it.
-- Adjustable tile size and tile count, always a complete symmetric honeycomb.
-- Per-app color tagging via long-press, without losing the label.
-- Settings (size, count, HUD visibility, immersive mode) persist across
-  restarts.
+- Adjustable tile size, tile count, spacing, and per-side screen margins.
+- Per-tile color, size, and icon overrides via long-press; apps can also be
+  renamed. Every override resets independently.
+- Drag tiles to rearrange them: grid-snapped, forgiving Snap Mode, free
+  placement onto empty cells, or fully free positioning anywhere on screen.
+- Everything persists across restarts.
 
 WORKFLOW
 - Full-screen honeycomb grid, spaced evenly, growing outward from the center.
 - Fast outside-in reveal motion tuned for a single, deliberate open action.
 - Press and drag across tiles to preview, release to launch.
-- Tap the background (not a tile) to collapse the grid again.
+- Swipe up anywhere — or tap empty space — for instant app search; it launches
+  as soon as your typing narrows the list to one match.
+- Folders: assign more than one app to a tile.
+- Hide apps you never launch from search, restore them individually later.
+
+LOOK
+- 14 tile reveal animations, from a voltage surge to a hex iris, a wireframe
+  build, a pixel decode, and a glitch slice — plus a fixed-speed live preview
+  of your own grid while you pick one.
+- 18 animated backgrounds (neuro links, radar sweep, data rain, CRT scanlines,
+  horizon grid, orbital rings, a true-black OLED mode, and more), each with
+  opacity, intensity, effect size, and accent color controls. The real Android
+  wallpaper works as a background too.
+- Installed icon packs are supported — browse any pack's catalogue and pick a
+  replacement icon per tile.
+- A terminal-style status readout (clock, battery, signal, Wi-Fi, Bluetooth),
+  every element individually switchable.
 
 PRIVACY
 - Fully local. Nothing is transmitted, stored remotely, or tracked.
@@ -110,9 +129,13 @@ SECURITY / PRIVACY NOTES
 - Reads your installed-app list and icons via the standard Android
   `PackageManager` — required for any launcher, used only to display and
   launch your own apps.
-- Reads battery level and network connectivity state for the status
-  readout; requests the `ACCESS_NETWORK_STATE` permission for this and
-  nothing else.
+- Reads battery level and network connectivity state for the status readout
+  (`ACCESS_NETWORK_STATE`).
+- Optional, only requested when you turn the matching feature on:
+  `BLUETOOTH_CONNECT` for the Bluetooth status glyph, storage/media read
+  access for showing your own Android wallpaper behind the grid, `SET_WALLPAPER`
+  so the OLED-black background can black out the real wallpaper too, and the
+  battery-optimization exemption prompt that keeps the launcher resident.
 - No user data is collected, stored remotely, or transmitted.
 
 ------------------------------------------------------------

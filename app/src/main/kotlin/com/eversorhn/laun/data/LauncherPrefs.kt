@@ -112,21 +112,38 @@ data class LauncherSettings(
     /** When on, an unassigned slot isn't drawn while idle — no "+" placeholder — though it's still
      *  there and still tappable to assign an app; see HexGrid's own doc for the one exception
      *  (whichever empty slot is currently under the finger). */
-    val hideEmptyTiles: Boolean = false
+    val hideEmptyTiles: Boolean = false,
+    /** Package names hidden from the swipe-up app search list (long-press an entry there to hide
+     *  it). Tiles already assigned to a hidden app keep working — this only trims the search list.
+     *  Restored individually from Settings → SYSTEM → HIDDEN APPS. */
+    val hiddenApps: Set<String> = emptySet()
 )
 
 /** Rename is meant to shorten a label for a tile, not hold a paragraph — also keeps the picker
  *  list and folder rows from wrapping awkwardly. */
 const val MAX_CUSTOM_APP_NAME_LENGTH = 24
 
-/** Selectable tile reveal/close animations — index into this list is what's persisted. */
-val REVEAL_ANIMATIONS = listOf("VOLTAGE SURGE", "SIGNAL LOCK-ON", "DATA PACKET PING", "SERVO LOCK ROTATE", "QUANTUM FLICKER")
+/** Selectable tile reveal/close animations — index into this list is what's persisted, so new
+ *  entries are only ever appended (HexTile's ANIM_* constants mirror these positions). */
+val REVEAL_ANIMATIONS = listOf(
+    "VOLTAGE SURGE", "SIGNAL LOCK-ON", "DATA PACKET PING", "SERVO LOCK ROTATE", "QUANTUM FLICKER",
+    "HOLO SCANLINE", "IRIS APERTURE", "WIREFRAME BUILD", "PIXEL DECODE", "GLITCH SLICE",
+    "SHUTTER BLINDS", "HEX PULSE", "GYRO SPIN", "DEPLOY DROP"
+)
 
-/** Selectable animated backgrounds, rendered behind the grid — index into this list is persisted. */
+/** Selectable animated backgrounds, rendered behind the grid — index into this list is persisted,
+ *  so new entries are only ever appended; OLED BLACK keeps its original slot ([OLED_BLACK_INDEX])
+ *  even though the picker shows it last. */
 val BACKGROUND_ANIMATIONS = listOf(
     "NEURO LINKS", "CIRCUIT TRACE", "WARP TUNNEL", "SERVER GRID",
-    "THREAT PING MAP", "SHARD DRIFT", "CIPHER SCROLL", "STARFIELD DRIFT", "OLED BLACK"
+    "THREAT PING MAP", "SHARD DRIFT", "CIPHER SCROLL", "STARFIELD DRIFT", "OLED BLACK",
+    "HEX MESH", "RADAR SWEEP", "DATA RAIN", "CRT SCANLINES", "HORIZON GRID",
+    "WAVEFORM", "DATA STREAM", "BINARY NOISE", "ORBITAL RINGS"
 )
+
+/** The flat-black "background" — no elements to tint/size, and picking it also paints the real
+ *  system wallpaper black. Not the list's lastIndex anymore, hence a named constant. */
+const val OLED_BLACK_INDEX = 8
 
 /**
  * Persists everything that was reset on every page reload in the demo.html prototype:
@@ -182,6 +199,7 @@ class LauncherPrefs(private val context: Context) {
         val MARGIN_START = intPreferencesKey("margin_start_dp")
         val MARGIN_END = intPreferencesKey("margin_end_dp")
         val HIDE_EMPTY_TILES = booleanPreferencesKey("hide_empty_tiles")
+        val HIDDEN_APPS = stringSetPreferencesKey("hidden_apps")
     }
 
     val settings: Flow<LauncherSettings> = context.dataStore.data.map { prefs ->
@@ -273,7 +291,8 @@ class LauncherPrefs(private val context: Context) {
             marginBottomDp = (prefs[Keys.MARGIN_BOTTOM] ?: 32).coerceIn(0, 200),
             marginStartDp = (prefs[Keys.MARGIN_START] ?: 32).coerceIn(0, 200),
             marginEndDp = (prefs[Keys.MARGIN_END] ?: 32).coerceIn(0, 200),
-            hideEmptyTiles = prefs[Keys.HIDE_EMPTY_TILES] ?: false
+            hideEmptyTiles = prefs[Keys.HIDE_EMPTY_TILES] ?: false,
+            hiddenApps = prefs[Keys.HIDDEN_APPS] ?: emptySet()
         )
     }
 
@@ -525,6 +544,15 @@ class LauncherPrefs(private val context: Context) {
 
     suspend fun setHideEmptyTiles(enabled: Boolean) {
         context.dataStore.edit { it[Keys.HIDE_EMPTY_TILES] = enabled }
+    }
+
+    /** Hides/unhides one app in the swipe-up search list. Deliberately not part of [resetSettings]
+     *  — like slotApps and tileColors, it's home-screen content, not a settings-panel knob. */
+    suspend fun setAppHidden(packageName: String, hidden: Boolean) {
+        context.dataStore.edit { prefs ->
+            val current = prefs[Keys.HIDDEN_APPS] ?: emptySet()
+            prefs[Keys.HIDDEN_APPS] = if (hidden) current + packageName else current - packageName
+        }
     }
 
     suspend fun setAlwaysShowGrid(enabled: Boolean) {

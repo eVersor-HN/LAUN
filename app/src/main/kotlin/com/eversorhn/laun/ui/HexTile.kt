@@ -28,7 +28,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -38,7 +48,10 @@ import androidx.compose.material3.Text
 import com.eversorhn.laun.ui.theme.LaunColors
 import com.eversorhn.laun.ui.theme.HeadFontFamily
 import com.eversorhn.laun.ui.theme.MonoFontFamily
+import androidx.compose.ui.MotionDurationScale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import kotlin.math.ceil
 import kotlin.math.exp
 import kotlin.random.Random
 
@@ -60,6 +73,37 @@ private const val ANIM_SIGNAL_LOCK_ON = 1
 private const val ANIM_DATA_PACKET_PING = 2
 private const val ANIM_SERVO_LOCK_ROTATE = 3
 private const val ANIM_QUANTUM_FLICKER = 4
+private const val ANIM_HOLO_SCANLINE = 5
+private const val ANIM_IRIS_APERTURE = 6
+private const val ANIM_WIREFRAME_BUILD = 7
+private const val ANIM_PIXEL_DECODE = 8
+private const val ANIM_GLITCH_SLICE = 9
+private const val ANIM_SHUTTER_BLINDS = 10
+private const val ANIM_HEX_PULSE = 11
+private const val ANIM_GYRO_SPIN = 12
+private const val ANIM_DEPLOY_DROP = 13
+
+/**
+ * Compose scales every tween by the system's "Animator duration scale" (Developer options) — at
+ * 0 (a common "make the phone snappy" tweak) each reveal completes on its first frame, so only the
+ * per-tile stagger (a plain delay, which isn't scaled) survived: tiles just popped in one after
+ * another with no motion at all, regardless of ANIMATION SPEED. Confirmed on-device via logging.
+ * The reveal is LAUN's own signature, and LAUN already has its own speed control (including
+ * INSTANT), so the reveal animates under a fixed scale of 1 and ANIMATION SPEED alone decides.
+ */
+private val UnscaledMotion = object : MotionDurationScale {
+    override val scaleFactor: Float get() = 1f
+}
+
+/** The tile's rendered footprint inside its layout box — same 0.9 as HexGrid's hit-testing. */
+private const val RENDER_SCALE = 0.9f
+
+/** Reveals implemented in the draw phase (clipping/overlays around the tile's own content) rather
+ *  than purely as a graphicsLayer transform — these get a [Modifier.drawWithContent] on the tile. */
+private val DRAW_PHASE_REVEALS = setOf(
+    ANIM_HOLO_SCANLINE, ANIM_IRIS_APERTURE, ANIM_WIREFRAME_BUILD, ANIM_PIXEL_DECODE,
+    ANIM_GLITCH_SLICE, ANIM_SHUTTER_BLINDS, ANIM_HEX_PULSE
+)
 
 /** Pointy-top hexagon, matching demo.html's clip-path: polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%). */
 internal val HexShape = GenericShape { size, _ ->
@@ -72,40 +116,81 @@ internal val HexShape = GenericShape { size, _ ->
     close()
 }
 
-// The functions below are read from inside Modifier.graphicsLayer { ... } lambdas instead of the
-// composable body. graphicsLayer reads happen at layout/draw time and don't invalidate composition,
-// so with up to 91 tiles animating at once, per-frame updates no longer force 91 recompositions —
-// only the cheap draw-phase transform re-runs. Reading progress.value directly in the function body
-// (the previous approach) was the actual jank source, not the animation math itself.
+// The functions below are read from inside Modifier.graphicsLayer { ... } / drawWithContent { ... }
+// lambdas instead of the composable body. Those reads happen at layout/draw time and don't
+// invalidate composition, so with up to 91 tiles animating at once, per-frame updates no longer
+// force 91 recompositions — only the cheap draw-phase transform re-runs. Reading progress.value
+// directly in the function body (the previous approach) was the actual jank source, not the
+// animation math itself.
+
+/** Quantum Flicker's alpha keyframes (time -> alpha). Top-level so the per-frame graphicsLayer
+ *  lambda below reads a shared constant instead of allocating this list on every frame of every
+ *  animating tile (up to 91 at once). */
+private val QUANTUM_FLICKER_STOPS = listOf(
+    0f to 0f, 0.12f to .8f, 0.20f to 0f, 0.34f to .6f, 0.42f to .1f,
+    0.58f to 1f, 0.66f to .3f, 0.80f to 1f, 1f to 1f
+)
+
+/** Open-easing per reveal animation — allocated once, not per HexTile recomposition. Quantum
+ *  Flicker / the draw-phase reveals need raw linear time to key their keyframes off; the others
+ *  use an eased "openness" curve directly. */
+private val EASING_SIGNAL_LOCK_ON = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)
+private val EASING_DATA_PACKET_PING = CubicBezierEasing(0.34f, 1.56f, 0.64f, 1f)
+private val EASING_SERVO_LOCK_ROTATE = CubicBezierEasing(0.2f, 0.9f, 0.3f, 1.15f)
+private val EASING_VOLTAGE_SURGE = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)
+private val EASING_SMOOTH = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)
+private val EASING_CLOSE = CubicBezierEasing(0.7f, 0f, 0.84f, 0f)
 
 private fun mainAlpha(revealAnimation: Int, isOpen: Boolean, t: Float): Float {
     if (!isOpen) return t
     return when (revealAnimation) {
         ANIM_SIGNAL_LOCK_ON -> if (t < 0.55f) 0f else 1f
         ANIM_QUANTUM_FLICKER -> {
-            val stops = listOf(
-                0f to 0f, 0.12f to .8f, 0.20f to 0f, 0.34f to .6f, 0.42f to .1f,
-                0.58f to 1f, 0.66f to .3f, 0.80f to 1f, 1f to 1f
-            )
-            stops.last { it.first <= t }.second
+            var alpha = 0f
+            for ((time, a) in QUANTUM_FLICKER_STOPS) {
+                if (time <= t) alpha = a else break
+            }
+            alpha
         }
+        // Revealed by clipping in the draw phase, so the layer itself is fully opaque throughout.
+        ANIM_HOLO_SCANLINE, ANIM_IRIS_APERTURE, ANIM_PIXEL_DECODE, ANIM_SHUTTER_BLINDS -> 1f
+        // Outline draws first, the face fades in underneath it during the second half.
+        ANIM_WIREFRAME_BUILD -> ((t - 0.4f) / 0.5f).coerceIn(0f, 1f)
+        // Slices are visible almost immediately; what animates is their misalignment settling.
+        ANIM_GLITCH_SLICE -> (t * 3f).coerceIn(0f, 1f)
         else -> t
     }
 }
 
-private fun mainScale(revealAnimation: Int, isOpen: Boolean, t: Float): Float {
-    if (!isOpen) return t * 0.9f
+private fun mainScale(revealAnimation: Int, isOpen: Boolean, t: Float, rawProgress: Float): Float {
+    if (!isOpen) return t * RENDER_SCALE
     return when (revealAnimation) {
-        ANIM_SIGNAL_LOCK_ON, ANIM_QUANTUM_FLICKER -> 0.9f
-        else -> t * 0.9f
+        ANIM_SIGNAL_LOCK_ON, ANIM_QUANTUM_FLICKER,
+        ANIM_HOLO_SCANLINE, ANIM_IRIS_APERTURE, ANIM_WIREFRAME_BUILD,
+        ANIM_PIXEL_DECODE, ANIM_GLITCH_SLICE, ANIM_SHUTTER_BLINDS -> RENDER_SCALE
+        // Comes in oversized and "lands" — the overshooting easing dips it briefly below rest size
+        // right at touchdown, which reads as the impact.
+        ANIM_DEPLOY_DROP -> lerp(1.3f, RENDER_SCALE, rawProgress.coerceAtMost(1.15f))
+        else -> t * RENDER_SCALE
     }
 }
 
 private fun mainRotation(revealAnimation: Int, isOpen: Boolean, rawProgress: Float): Float {
-    if (!isOpen || revealAnimation != ANIM_SERVO_LOCK_ROTATE) return 0f
-    // Uses the raw (uncoerced) eased value so the overshoot in openEasing carries the rotation
-    // slightly past 0deg before it settles — the "mechanical snap" wobble.
-    return lerp(160f, 0f, rawProgress.coerceAtMost(1.2f))
+    if (!isOpen) return 0f
+    return when (revealAnimation) {
+        // Uses the raw (uncoerced) eased value so the overshoot in openEasing carries the rotation
+        // slightly past 0deg before it settles — the "mechanical snap" wobble.
+        ANIM_SERVO_LOCK_ROTATE -> lerp(160f, 0f, rawProgress.coerceAtMost(1.2f))
+        // A full turn while growing in — the servo's bigger sibling.
+        ANIM_GYRO_SPIN -> lerp(360f, 0f, rawProgress.coerceAtMost(1.15f))
+        else -> 0f
+    }
+}
+
+private fun mainTranslationY(revealAnimation: Int, isOpen: Boolean, rawProgress: Float, heightPx: Float): Float {
+    if (!isOpen || revealAnimation != ANIM_DEPLOY_DROP) return 0f
+    // Drops in from above; the overshoot past 1 pushes it a hair below rest before it settles.
+    return lerp(-heightPx * 0.7f, 0f, rawProgress.coerceAtMost(1.15f))
 }
 
 private fun voltageFlashAlpha(isOpen: Boolean, t: Float): Float {
@@ -143,6 +228,186 @@ private fun pingAlpha(isOpen: Boolean, t: Float): Float =
 
 private fun pingScale(t: Float): Float = lerp(0.15f, 1.4f, pingProgress(t))
 
+/** Writes the tile's pointy-top hexagon outline at [scale] around the box center into [path]. */
+private fun buildHexPath(path: Path, w: Float, h: Float, scale: Float) {
+    path.reset()
+    val cx = w / 2f
+    val cy = h / 2f
+    val hw = cx * scale
+    val hh = cy * scale
+    path.moveTo(cx, cy - hh)
+    path.lineTo(cx + hw, cy - hh / 2f)
+    path.lineTo(cx + hw, cy + hh / 2f)
+    path.lineTo(cx, cy + hh)
+    path.lineTo(cx - hw, cy + hh / 2f)
+    path.lineTo(cx - hw, cy - hh / 2f)
+    path.close()
+}
+
+/** Deterministic 0..1 noise for a grid cell / band of one tile — stable across frames (so a
+ *  pixel-decode cell resolves once, not flickering), different per tile (so neighbors don't decode
+ *  in lockstep). Plain integer hash, no allocation. */
+private fun cellNoise(i: Int, j: Int, seed: Int): Float {
+    var x = (i * 73856093) xor (j * 19349663) xor (seed * 83492791)
+    x = x xor (x ushr 13)
+    x *= -0x7a143595 // 0x85ebca6b
+    x = x xor (x ushr 16)
+    return (x and 0xFFFF) / 65535f
+}
+
+/** Per-tile scratch geometry for the draw-phase reveals — rebuilt only when the tile's pixel size
+ *  changes, never per frame. */
+private class RevealDrawCache {
+    private var w = -1f
+    private var h = -1f
+    val hex = Path()
+    val scratch = Path()
+    val measure = PathMeasure()
+    var hexLength = 0f
+    lateinit var stroke: Stroke
+    lateinit var strokeThin: Stroke
+
+    fun ensure(size: Size, density: Float) {
+        if (size.width == w && size.height == h) return
+        w = size.width
+        h = size.height
+        buildHexPath(hex, w, h, RENDER_SCALE)
+        measure.setPath(hex, forceClosed = true)
+        hexLength = measure.length
+        stroke = Stroke(width = 1.5f * density)
+        strokeThin = Stroke(width = 1f * density)
+    }
+}
+
+/**
+ * The draw-phase reveals. [drawContent] is the fully-composed tile (ring, face, label/icon, the
+ * graphicsLayer transform already applied) — each branch decides how much of it is visible at
+ * [t] and what to draw on top. Nothing here touches composition: `progress` is read inside the
+ * draw lambda that calls this, same as the graphicsLayer reveals.
+ */
+private fun ContentDrawScope.drawReveal(kind: Int, t: Float, cache: RevealDrawCache, seed: Int) {
+    cache.ensure(size, density)
+    val w = size.width
+    val h = size.height
+    val cx = w / 2f
+    val cy = h / 2f
+    val hw = cx * RENDER_SCALE
+    val hh = cy * RENDER_SCALE
+    val left = cx - hw
+    val right = cx + hw
+    val top = cy - hh
+    val bottom = cy + hh
+    val fg = LaunColors.fg
+    // Every bright edge/line fades out over the last stretch, so nothing pops when the reveal
+    // ends and this whole function stops being called.
+    val endFade = 1f - ((t - 0.85f) / 0.15f).coerceIn(0f, 1f)
+
+    when (kind) {
+        ANIM_HOLO_SCANLINE -> {
+            // A hologram materializing: content exists only above the scan line, which sweeps
+            // top to bottom with a soft glow trailing it.
+            val scanY = top + (bottom - top) * t
+            clipRect(top = 0f, bottom = scanY) { this@drawReveal.drawContent() }
+            clipPath(cache.hex) {
+                val glow = 12f * density
+                drawRect(fg.copy(alpha = 0.22f * endFade), Offset(left, scanY - glow), Size(right - left, glow))
+                drawRect(fg.copy(alpha = 0.95f * endFade), Offset(left, scanY - 1f * density), Size(right - left, 1.5f * density))
+            }
+        }
+        ANIM_IRIS_APERTURE -> {
+            // A hex-shaped iris opening from the center — content is visible only inside the
+            // aperture, whose bright rim fades as it reaches the tile's own edge.
+            val s = lerp(0.05f, RENDER_SCALE, t)
+            buildHexPath(cache.scratch, w, h, s)
+            clipPath(cache.scratch) { this@drawReveal.drawContent() }
+            drawPath(cache.scratch, fg.copy(alpha = 0.9f * (1f - t)), style = cache.stroke)
+        }
+        ANIM_WIREFRAME_BUILD -> {
+            // The outline is traced first (a bright cursor running the hex's perimeter), then the
+            // face fades in beneath it (see mainAlpha) and the wire fades away.
+            drawContent()
+            val outlineT = (t / 0.55f).coerceIn(0f, 1f)
+            cache.scratch.reset()
+            cache.measure.getSegment(0f, cache.hexLength * outlineT, cache.scratch, startWithMoveTo = true)
+            val wireFade = 1f - ((t - 0.7f) / 0.3f).coerceIn(0f, 1f)
+            drawPath(cache.scratch, fg.copy(alpha = wireFade), style = cache.stroke)
+            if (outlineT < 1f) {
+                val head = cache.measure.getPosition(cache.hexLength * outlineT)
+                drawCircle(fg, radius = 2.5f * density, center = head)
+            }
+        }
+        ANIM_PIXEL_DECODE -> {
+            // Content is there from the start, masked by a grid of black cells that each resolve
+            // at their own (stable, per-tile) threshold — the ones resolving right now flash
+            // bright, so the decode reads as a front sweeping through noise rather than a fade.
+            drawContent()
+            val cols = 7
+            val cell = (right - left) / cols
+            val rows = ceil((bottom - top) / cell).toInt()
+            clipPath(cache.hex) {
+                for (i in 0 until cols) for (j in 0 until rows) {
+                    val n = cellNoise(i, j, seed)
+                    val x = left + i * cell
+                    val y = top + j * cell
+                    when {
+                        n > t -> drawRect(LaunColors.bg, Offset(x, y), Size(cell + 0.5f, cell + 0.5f))
+                        n > t - 0.06f -> drawRect(
+                            fg.copy(alpha = ((n - (t - 0.06f)) / 0.06f) * 0.6f),
+                            Offset(x, y), Size(cell + 0.5f, cell + 0.5f)
+                        )
+                    }
+                }
+            }
+        }
+        ANIM_GLITCH_SLICE -> {
+            // Horizontal slices of the tile land misaligned and snap into place — displacement
+            // decays quadratically, each band jumps direction at its own step rate so the motion
+            // is jittery-digital, not a smooth slide. Deterministic per tile, no randomness per frame.
+            val bands = 5
+            val bh = (bottom - top) / bands
+            val decay = (1f - t) * (1f - t)
+            val amp = hw * 0.7f * decay
+            for (b in 0 until bands) {
+                val step = (t * (9 + b * 2)).toInt()
+                val dir = if (cellNoise(b, step, seed) > 0.5f) 1f else -1f
+                val dx = amp * dir * (0.35f + 0.65f * cellNoise(b, 991, seed))
+                translate(left = dx) {
+                    clipRect(top = top + b * bh, bottom = top + (b + 1) * bh + 0.5f) { this@drawReveal.drawContent() }
+                }
+            }
+        }
+        ANIM_SHUTTER_BLINDS -> {
+            // Four vertical louvres, each wiping open left-to-right in a staggered cascade with a
+            // bright edge on its leading front.
+            val strips = 4
+            val sw = (right - left) / strips
+            for (k in 0 until strips) {
+                val f = ((t - k * 0.12f) / 0.55f).coerceIn(0f, 1f)
+                if (f <= 0f) continue
+                val x0 = left + k * sw
+                clipRect(left = x0, right = x0 + sw * f + 0.5f) { this@drawReveal.drawContent() }
+                if (f < 1f) {
+                    clipPath(cache.hex) {
+                        drawRect(fg.copy(alpha = 0.9f * endFade), Offset(x0 + sw * f - 1f * density, top), Size(2f * density, bottom - top))
+                    }
+                }
+            }
+        }
+        ANIM_HEX_PULSE -> {
+            // DATA PACKET PING's hexagonal sibling: two concentric hex rings expand outward from
+            // the tile's center and dissolve — reads as the tile broadcasting its arrival.
+            drawContent()
+            for (k in 0..1) {
+                val p = ((t - k * 0.18f) / 0.6f).coerceIn(0f, 1f)
+                if (p <= 0f || p >= 1f) continue
+                buildHexPath(cache.scratch, w, h, lerp(0.25f, 1.7f, p))
+                drawPath(cache.scratch, fg.copy(alpha = (1f - p) * 0.85f), style = if (k == 0) cache.stroke else cache.strokeThin)
+            }
+        }
+        else -> drawContent()
+    }
+}
+
 @Composable
 internal fun HexTile(
     tile: TileLayout,
@@ -165,27 +430,42 @@ internal fun HexTile(
     val flourish = remember(tile.index, isOpen) {
         Random.nextInt(-50, 51) to Random.nextInt(480, 681)
     }
-    // Each animation picks its own open easing/curve; Quantum Flicker needs raw linear time to
-    // key its flicker keyframes off, the others use an eased "openness" curve directly.
     val openEasing = when (revealAnimation) {
-        ANIM_SIGNAL_LOCK_ON -> CubicBezierEasing(0.4f, 0f, 0.2f, 1f)
-        ANIM_DATA_PACKET_PING -> CubicBezierEasing(0.34f, 1.56f, 0.64f, 1f)
-        ANIM_SERVO_LOCK_ROTATE -> CubicBezierEasing(0.2f, 0.9f, 0.3f, 1.15f)
-        ANIM_QUANTUM_FLICKER -> LinearEasing
-        else -> CubicBezierEasing(0.16f, 1f, 0.3f, 1f) // Voltage Surge
+        ANIM_SIGNAL_LOCK_ON, ANIM_GLITCH_SLICE -> EASING_SIGNAL_LOCK_ON
+        ANIM_DATA_PACKET_PING, ANIM_HEX_PULSE, ANIM_DEPLOY_DROP -> EASING_DATA_PACKET_PING
+        ANIM_SERVO_LOCK_ROTATE, ANIM_GYRO_SPIN -> EASING_SERVO_LOCK_ROTATE
+        // Keyframe-driven reveals want an unwarped 0..1 so their own curves stay as authored.
+        ANIM_QUANTUM_FLICKER, ANIM_WIREFRAME_BUILD, ANIM_PIXEL_DECODE, ANIM_SHUTTER_BLINDS -> LinearEasing
+        ANIM_HOLO_SCANLINE, ANIM_IRIS_APERTURE -> EASING_SMOOTH
+        else -> EASING_VOLTAGE_SURGE
     }
+    // Whether the previous run of the effect below was an "open" — plain holder, not state, so
+    // writing it never invalidates anything.
+    val wasOpen = remember { booleanArrayOf(false) }
     LaunchedEffect(isOpen, tile.delayMs, flourish, speedMultiplier, revealAnimation) {
         if (revealAnimation < 0) {
             // NONE — tiles just snap to their final state, no stagger, no tween.
             progress.snapTo(if (isOpen) 1f else 0f)
+            wasOpen[0] = isOpen
             return@LaunchedEffect
         }
         if (isOpen) {
+            // A fresh open always plays from the start. Without this, an open that interrupts a
+            // close (the picker preview's replay flips closed→open within 40ms; a quick re-tap
+            // on the home screen does the same) resumed from wherever the close had gotten to —
+            // ~0.99 for the preview — so the "replay" showed nothing at all.
+            if (!wasOpen[0]) progress.snapTo(0f)
+            wasOpen[0] = true
             delay(((tile.delayMs + flourish.first).coerceAtLeast(0) * speedMultiplier).toLong())
-            progress.animateTo(1f, tween((flourish.second * speedMultiplier).toInt(), easing = openEasing))
+            withContext(UnscaledMotion) {
+                progress.animateTo(1f, tween((flourish.second * speedMultiplier).toInt(), easing = openEasing))
+            }
         } else {
+            wasOpen[0] = false
             delay((tile.delayMs / 2 * speedMultiplier).toLong())
-            progress.animateTo(0f, tween((260 * speedMultiplier).toInt(), easing = CubicBezierEasing(0.7f, 0f, 0.84f, 0f)))
+            withContext(UnscaledMotion) {
+                progress.animateTo(0f, tween((260 * speedMultiplier).toInt(), easing = EASING_CLOSE))
+            }
         }
     }
 
@@ -216,21 +496,36 @@ internal fun HexTile(
         else -> LaunColors.bg2
     }
 
+    // Draw-phase reveals wrap the OUTER box (not the graphicsLayer one), so their clipping and
+    // overlays sit on top of the already-transformed tile and aren't themselves faded/scaled by
+    // the layer — a wireframe outline must stay crisp while the face underneath fades in.
+    val drawCache = remember { RevealDrawCache() }
+    val revealDrawModifier = if (revealAnimation in DRAW_PHASE_REVEALS) {
+        Modifier.drawWithContent {
+            val t = progress.value.coerceIn(0f, 1f)
+            // Closing (or already fully open) falls back to the plain layer fade — these reveals
+            // are one-way "materialize" effects, and at t == 1 there's nothing left to mask.
+            if (!isOpen || t >= 1f) drawContent() else drawReveal(revealAnimation, t, drawCache, tile.index)
+        }
+    } else Modifier
+
     Box(
-        modifier = modifier.size(width = tile.widthDp, height = tile.heightDp)
+        modifier = modifier.size(width = tile.widthDp, height = tile.heightDp).then(revealDrawModifier)
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    val t = progress.value.coerceIn(0f, 1f)
+                    val raw = progress.value
+                    val t = raw.coerceIn(0f, 1f)
                     this.alpha = mainAlpha(revealAnimation, isOpen, t)
                     // Lifted slightly above its resting size while dragged — reads as "raised off
-                    // the grid," on top of the wiggle's rotational jitter.
-                    val s = mainScale(revealAnimation, isOpen, t) * if (isDragging) 1.12f else 1f
+                    // the grid."
+                    val s = mainScale(revealAnimation, isOpen, t, raw) * if (isDragging) 1.12f else 1f
                     scaleX = s
                     scaleY = s
-                    rotationZ = mainRotation(revealAnimation, isOpen, progress.value)
+                    rotationZ = mainRotation(revealAnimation, isOpen, raw)
+                    translationY = mainTranslationY(revealAnimation, isOpen, raw, size.height)
                 }
                 .clip(HexShape)
                 .background(ringColor)
